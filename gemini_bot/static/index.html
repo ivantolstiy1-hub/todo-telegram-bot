@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Gemini AI Assistant</title>
+  
+  <!-- PWA & Mobile Meta Tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Gemini AI">
+  <meta name="application-name" content="Gemini AI">
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- Icons -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Fixed Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">✨</div>
+      <div class="brand-info">
+        <h1>Gemini AI</h1>
+        <div class="brand-status">
+          <span class="status-dot"></span>
+          <span>Online & Ready</span>
+        </div>
+      </div>
+    </div>
+    <button id="btnInstallApp" class="btn-install-header">
+      <span>📲</span>
+      <span>Установить</span>
+    </button>
+  </header>
+
+  <!-- App Content (Tab Panes) -->
+  <main class="app-content">
+    <!-- 1. TAB: CHAT -->
+    <section id="tab-chat" class="tab-pane active">
+      <div id="chatMessages" class="chat-messages">
+        <div class="message-bubble bot">
+          👋 <strong>Привет!</strong> Я ваш персональный AI-ассистент на базе Google Gemini и Antigravity.<br><br>
+          Чем я могу помочь вам прямо сейчас? Задайте вопрос по коду, тексту или задаче! 👇
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. TAB: CONFIG (Самонастройка) -->
+    <section id="tab-config" class="tab-pane">
+      <div class="config-container">
+        <!-- Стиль общения -->
+        <div class="section-card">
+          <div class="card-title">🎨 Стиль ответов</div>
+          <div class="style-grid">
+            <div class="style-chip active" data-style="default">Базовый</div>
+            <div class="style-chip" data-style="concise">Краткий</div>
+            <div class="style-chip" data-style="senior">Senior Engineer</div>
+            <div class="style-chip" data-style="detailed">Развернутый</div>
+            <div class="style-chip" data-style="friendly" style="grid-column: span 2;">Дружелюбный</div>
+          </div>
+        </div>
+
+        <!-- Температура -->
+        <div class="section-card">
+          <div class="card-title">🌡 Креативность (Температура)</div>
+          <div class="slider-wrapper">
+            <div class="slider-header">
+              <span>Точный код (0.1)</span>
+              <span id="tempVal" class="slider-val">0.7</span>
+              <span>Творчество (1.0)</span>
+            </div>
+            <input type="range" id="tempSlider" min="0.0" max="1.0" step="0.05" value="0.7">
+          </div>
+        </div>
+
+        <!-- Кастомные правила -->
+        <div class="section-card">
+          <div class="card-title">📋 Активные правила поведения</div>
+          <ul id="rulesList" class="rules-list">
+            <!-- Динамически заполняется -->
+          </ul>
+          <div class="add-rule-box">
+            <input type="text" id="ruleInput" class="add-rule-input" placeholder="Новое правило (напр., type hints)">
+            <button id="btnAddRule" class="btn-add-rule">Добавить</button>
+          </div>
+        </div>
+
+        <!-- Сброс -->
+        <button id="btnResetConfig" class="btn-primary-install" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4);">
+          🔄 Сбросить настройки к заводским
+        </button>
+      </div>
+    </section>
+
+    <!-- 3. TAB: TASKS (Todo) -->
+    <section id="tab-tasks" class="tab-pane">
+      <div class="tasks-container">
+        <div class="section-card">
+          <div class="card-title">📝 Добавить задачу</div>
+          <div class="add-rule-box">
+            <input type="text" id="taskInput" class="add-rule-input" placeholder="Что нужно сделать?">
+            <button id="btnAddTask" class="btn-add-rule">Создать</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="card-title">📋 Список задач</div>
+          <div id="tasksList">
+            <!-- Динамически заполняется -->
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Chat Input Bar (Видна только на вкладке чата) -->
+  <div id="chatInputBar" class="chat-input-bar">
+    <input type="text" id="chatInput" class="chat-input" placeholder="Напишите задачу или вопрос..." autocomplete="off">
+    <button id="sendBtn" class="btn-send">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"></line>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Bottom Navigation Bar -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="chat">
+      <span class="nav-icon">💬</span>
+      <span class="nav-label">Чат</span>
+    </button>
+    <button class="nav-item" data-tab="config">
+      <span class="nav-icon">⚙️</span>
+      <span class="nav-label">Настройки</span>
+    </button>
+    <button class="nav-item" data-tab="tasks">
+      <span class="nav-icon">📋</span>
+      <span class="nav-label">Задачи</span>
+    </button>
+  </nav>
+
+  <!-- PWA Install Modal / Sheet -->
+  <div id="installModal" class="install-modal">
+    <div class="install-sheet">
+      <div class="install-header">
+        <img src="/icons/icon-192.png" alt="Icon" class="install-icon">
+        <div class="install-title">
+          <h3>Установить Gemini AI</h3>
+          <p>Быстрый доступ с экрана вашего телефона</p>
+        </div>
+      </div>
+      <div id="installSteps" class="install-steps">
+        <!-- Заполняется в app.js в зависимости от ОС -->
+      </div>
+      <button id="btnModalInstall" class="btn-primary-install">Установить</button>
+      <button id="btnCloseModal" class="btn-close-modal">Закрыть</button>
+    </div>
+  </div>
+
+  <!-- App Script -->
+  <script src="/app.js"></script>
+</body>
+</html>

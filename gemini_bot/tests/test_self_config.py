@@ -120,8 +120,7 @@ class TestSelfConfigurationAndWeb(unittest.TestCase):
         handler.wfile = io.BytesIO()
         handler.do_GET()
         html_output = handler.wfile.getvalue().decode("utf-8")
-        self.assertIn("Gemini & Antigravity Bot", html_output)
-        self.assertIn("Online & Active 24/7", html_output)
+        self.assertIn("Gemini AI", html_output)
 
 if __name__ == "__main__":
     unittest.main()

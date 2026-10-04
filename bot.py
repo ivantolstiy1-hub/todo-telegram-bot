@@ -409,19 +409,24 @@ def show_tasks(message):
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 if __name__ == "__main__":
-    threading.Thread(target=run_server, daemon=True).start()
-    threading.Thread(target=notification_worker, daemon=True).start()
-    print("Бот и WebApp запущены...")
-    
-    try:
-        bot.remove_webhook(drop_pending_updates=True)
-        time.sleep(1)
-    except Exception as e:
-        print(f"Ошибка сброса webhook: {e}")
+    # Запуск веб-сервера для Mini App
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+
+    # Запуск фонового планировщика напоминаний
+    notify_thread = threading.Thread(target=notification_worker, daemon=True)
+    notify_thread.start()
+
+    print("HTTP-сервер и воркер напоминаний запущены...")
+
+    # Даем старому контейнеру Render 5 секунд на отключение
+    time.sleep(5)
 
     while True:
         try:
-            bot.polling(none_stop=True, interval=1, timeout=30)
+            bot.remove_webhook(drop_pending_updates=True)
+            print("Telegram Webhook сброшен, начинаем polling...")
+            bot.infinity_polling(timeout=20, long_polling_timeout=15)
         except Exception as e:
-            print(f"Polling error: {e}")
+            print(f"Ошибка polling (повтор через 5 сек): {e}")
             time.sleep(5)

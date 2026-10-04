@@ -152,7 +152,9 @@ class PWAAndApiHandler(BaseHTTPRequestHandler):
                 models_list = []
                 for mid, mname in AVAILABLE_MODELS.items():
                     configured = True
-                    if mid.startswith("deepseek-"):
+                    if mid == "antigravity":
+                        configured = bool(pstats.get("antigravity", {}).get("configured"))
+                    elif mid.startswith("deepseek-"):
                         configured = bool(pstats["deepseek"]["configured"] or pstats["openrouter"]["configured"])
                     elif mid.startswith("claude-"):
                         configured = bool(pstats["claude"]["configured"] or pstats["openrouter"]["configured"])

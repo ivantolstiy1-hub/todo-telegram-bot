@@ -104,6 +104,41 @@ class TestHermesOrchestrator(unittest.TestCase):
             self.assertIn("Тестовый ответ от Gemini API", reply)
             self.assertIn("Агент Гермес", reply)
 
+    def test_antigravity_provider_status(self):
+        """Проверка наличия Antigravity CLI в списке провайдеров."""
+        status = hermes_service.get_providers_status()
+        self.assertIn("antigravity", status)
+        self.assertIn("Antigravity Agent", status["antigravity"]["name"])
+
+    def test_antigravity_explicit_routing(self):
+        """Проверка распознавания прямых команд к Antigravity CLI и терминалу."""
+        cases = [
+            ("Гермес, через antigravity: запусти git status", "antigravity", "запусти git status"),
+            ("через терминал: прочитай README.md", "antigravity", "прочитай README.md"),
+            ("Гермес, выполни в терминале: pytest", "antigravity", "pytest"),
+        ]
+        for prompt, expected_model, expected_clean in cases:
+            model, clean = hermes_service.parse_explicit_route(prompt)
+            self.assertEqual(model, expected_model, f"Ошибка модели для: {prompt}")
+            self.assertEqual(clean, expected_clean, f"Ошибка очистки промпта для: {prompt}")
+
+    def test_antigravity_intent_classification(self):
+        """Проверка авто-маршрутизации системных и терминальных задач в Antigravity CLI."""
+        term_prompt = "Пожалуйста, выполни команду git status и проверь файлы проекта в терминале"
+        rec_model, reason = hermes_service.classify_intent(term_prompt)
+        self.assertEqual(rec_model, "antigravity")
+        self.assertIn("Antigravity CLI", reason)
+
+    def test_antigravity_fallback_in_cloud(self):
+        """Если Antigravity CLI недоступен (например, в облаке Render), задача плавно переключается на Claude/Gemini."""
+        with patch.object(hermes_service.providers["antigravity"], "is_configured", return_value=False), \
+             patch.object(hermes_service.providers["claude"], "is_configured", return_value=False), \
+             patch.object(hermes_service.providers["openrouter"], "is_configured", return_value=False):
+            prov, actual_model, banner = hermes_service.resolve_provider("antigravity")
+            self.assertIsInstance(prov, GeminiProvider)
+            self.assertEqual(actual_model, "gemini-3.5-flash")
+            self.assertIsNotNone(banner)
+            self.assertIn("Antigravity CLI", banner)
 
 if __name__ == "__main__":
     unittest.main()

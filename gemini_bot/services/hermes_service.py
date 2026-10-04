@@ -36,7 +36,7 @@ class BaseAIProvider(ABC):
 
     @abstractmethod
     def is_configured(self) -> bool:
-        """Проверяет наличие необходимого API-ключа."""
+        """Проверяет наличие необходимого API-ключа или доступность окружения."""
         pass
 
     @abstractmethod
@@ -47,9 +47,63 @@ class BaseAIProvider(ABC):
         temperature: float,
         model_id: str,
         on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> str:
-        """Выполняет генерацию ответа от языковой модели."""
+        """Выполняет генерацию ответа от языковой модели или агента."""
         pass
+
+
+class AntigravityProvider(BaseAIProvider):
+    """Провайдер автономного агента Antigravity CLI (выполнение терминальных команд и файлов)."""
+    name = "antigravity"
+    display_name = "Antigravity Agent (CLI)"
+
+    def is_configured(self) -> bool:
+        try:
+            from services.antigravity_service import antigravity_service
+            return antigravity_service.is_available()
+        except Exception:
+            return False
+
+    def generate(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: str,
+        temperature: float,
+        model_id: str,
+        on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
+    ) -> str:
+        from services.antigravity_service import antigravity_service
+        from services.database import get_user_antigravity_conv, set_user_antigravity_conv
+
+        if not self.is_configured():
+            raise RuntimeError("Antigravity CLI недоступен в данной среде (запустите бота на локальном Mac с установленным CLI)")
+
+        user_id = kwargs.get("user_id", 1)
+        prompt = messages[-1]["content"] if messages else "Привет"
+
+        conv_id = get_user_antigravity_conv(user_id)
+        if not conv_id:
+            if on_status:
+                on_status("🤖 Antigravity: Инициализация сессии агента... ⏳")
+            conv_id, reply = antigravity_service.create_conversation(
+                prompt=prompt,
+                model="flash",
+                title=f"TG_Hermes_{user_id}",
+                on_progress=on_status
+            )
+            set_user_antigravity_conv(user_id, conv_id)
+            return reply
+        else:
+            if on_status:
+                on_status("🤖 Antigravity: Выполнение задачи в терминале...")
+            reply = antigravity_service.send_message(
+                conversation_id=conv_id,
+                content=prompt,
+                on_progress=on_status
+            )
+            return reply
 
 
 class GeminiProvider(BaseAIProvider):
@@ -336,6 +390,7 @@ class HermesOrchestrator:
 
     def __init__(self):
         self.providers: Dict[str, BaseAIProvider] = {
+            "antigravity": AntigravityProvider(),
             "gemini": GeminiProvider(),
             "deepseek": DeepSeekProvider(),
             "openai": OpenAIProvider(),
@@ -359,18 +414,18 @@ class HermesOrchestrator:
         Примеры:
           "Гермес, спроси у deepseek: реши задачу..."
           "через claude: напиши скрипт..."
-          "Гермес, спроси у чатгпт: сочини сказку"
+          "Гермес, через antigravity: запусти команду git status"
         """
-        # Паттерн 1: "Гермес, [спроси у/реши через] <модель>[:|, ] <текст>"
+        # Паттерн 1: "Гермес, [через/спроси у/реши через/выполни в] <модель>[:|, ] <текст>"
         pattern1 = re.compile(
-            r"^(?:гермес|hermes)[,\s]+(?:спроси\s+у|реши\s+через|передай|используй)?\s*"
-            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини)[,\s:]*(.*)$",
+            r"^(?:гермес|hermes)[,\s]+(?:через|спроси\s+у|реши\s+через|передай|используй|запусти\s+в|выполни\s+в)?\s*"
+            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини|antigravity|антигравити|терминале|терминал|agy)[,\s:]*(.*)$",
             re.IGNORECASE | re.DOTALL,
         )
         # Паттерн 2: "через <модель>[:|, ] <текст>" или "спроси у <модель>[:|, ] <текст>"
         pattern2 = re.compile(
-            r"^(?:через|спроси\s+у)\s+"
-            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини)[,\s:]*(.*)$",
+            r"^(?:через|спроси\s+у|выполни\s+в|запусти\s+в)\s+"
+            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини|antigravity|антигравити|терминале|терминал|agy)[,\s:]*(.*)$",
             re.IGNORECASE | re.DOTALL,
         )
 
@@ -382,7 +437,9 @@ class HermesOrchestrator:
             # Если после префикса остался пустой текст, не обрезаем
             prompt_to_use = remaining_prompt if remaining_prompt else text
 
-            if target_raw in ("deepseek", "дипсик"):
+            if target_raw in ("antigravity", "антигравити", "терминал", "терминале", "agy"):
+                return "antigravity", prompt_to_use
+            elif target_raw in ("deepseek", "дипсик"):
                 return "deepseek-reasoner", prompt_to_use
             elif target_raw in ("claude", "клод"):
                 return "claude-3-5-sonnet", prompt_to_use
@@ -401,6 +458,17 @@ class HermesOrchestrator:
         Возвращает кортеж: (рекомендуемая_модель, причина_маршрутизации).
         """
         t = text.lower()
+
+        # 0. Терминальные команды, запуск скриптов, работа с файловой системой -> Antigravity CLI
+        terminal_patterns = [
+            r"в терминале", r"через терминал", r"командной строке", r"запусти команду",
+            r"выполни команду", r"терминальн.*команд", r"прочитай файл", r"создай файл",
+            r"открой файл", r"запиши в файл", r"удали файл", r"структур.*пап",
+            r"файлы проекта", r"git status", r"git commit", r"git push", r"git log",
+            r"npm run", r"npm test", r"pip install", r"pytest", r"запусти тест"
+        ]
+        if any(re.search(p, t) for p in terminal_patterns):
+            return "antigravity", "🛠 Анализ: терминальная команда или работа с файлами -> маршрут в Antigravity CLI"
 
         # 1. Математика, формальная логика, цепочки рассуждений -> DeepSeek R1
         reasoning_patterns = [
@@ -439,10 +507,26 @@ class HermesOrchestrator:
         Подбирает рабочий провайдер для запрошенной модели.
         Если ключ целевого провайдера отсутствует, реализует плавный fallback:
         - DeepSeek / Claude / GPT / Hermes могут работать через OpenRouter (если задан OPENROUTER_API_KEY).
-        - Если ключей нет, происходит авто-перенаправление на Gemini 3.5 Flash с поясняющим уведомлением.
+        - Antigravity CLI в облачной среде Render плавно переключается на Claude/Gemini.
         
         Возвращает: (provider_instance, actual_model_id, notification_banner)
         """
+        # 0. Запрос к Antigravity CLI
+        if target_model in ("antigravity", "agent"):
+            if self.providers["antigravity"].is_configured():
+                return self.providers["antigravity"], "antigravity", None
+            # Fallback для облачного сервера Render
+            banner = (
+                "🏛 *[Агент Гермес: среда Antigravity CLI активна на локальном компьютере с установленным агентом]*\n"
+                "💡 _На облачном сервере Render терминал изолирован, поэтому задача решена аналитически через Claude / Gemini._\n\n"
+            )
+            if self.providers["claude"].is_configured():
+                return self.providers["claude"], "claude-3-5-sonnet", banner
+            elif self.providers["openrouter"].is_configured():
+                return self.providers["openrouter"], "claude-3-5-sonnet", banner
+            else:
+                return self.providers["gemini"], "gemini-3.5-flash", banner
+
         # 1. Запрос к Gemini
         if target_model.startswith("gemini-"):
             return self.providers["gemini"], target_model, None
@@ -564,6 +648,7 @@ class HermesOrchestrator:
                 temperature=temp,
                 model_id=actual_model_id,
                 on_status=on_status,
+                user_id=user_id,
             )
         except Exception as e:
             logger.warning(f"Ошибка провайдера {provider.name} ({actual_model_id}): {e}. Переключаюсь на каскад Gemini...")
@@ -578,6 +663,7 @@ class HermesOrchestrator:
                 temperature=temp,
                 model_id="gemini-3.5-flash",
                 on_status=on_status,
+                user_id=user_id,
             )
             fallback_banner = (
                 f"🏛 *[Агент Гермес: сбой обращения к {actual_model_id} ({e.__class__.__name__}). Ответ получен через Gemini 3.5 Flash]*\n\n"

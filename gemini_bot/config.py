@@ -62,6 +62,7 @@ MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "35000"))
 
 AVAILABLE_MODELS = {
     "auto-hermes": "🤖 Агент Гермес (Умный авто-маршрутизатор)",
+    "antigravity": "🛠 Antigravity CLI (Терминал, файлы и команды)",
     "gemini-3.5-flash": "⚡ Gemini 3.5 Flash (Google AI)",
     "gemini-3.1-pro-preview": "🧠 Gemini 3.1 Pro (Флагман Google)",
     "deepseek-reasoner": "🧮 DeepSeek R1 (Логика и рассуждения)",

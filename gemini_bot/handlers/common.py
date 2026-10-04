@@ -25,6 +25,8 @@ def get_models_keyboard(current_model: str) -> types.InlineKeyboardMarkup:
         # Индикатор готовности провайдера
         if model_id == "auto-hermes":
             indicator = "✨"
+        elif model_id == "antigravity":
+            indicator = "🟢" if pstats.get("antigravity", {}).get("configured") else "💻"
         elif model_id.startswith("gemini-"):
             indicator = "🟢" if pstats["gemini"]["configured"] else "🔴"
         elif model_id.startswith("deepseek-"):

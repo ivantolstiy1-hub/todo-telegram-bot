@@ -9,8 +9,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot import types
 
-# ⚠️ Вставь сюда свой рабочий токен от @BotFather:
-BOT_TOKEN = os.getenv("8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM", "8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM")
+# Жестко заданный токен и URL WebApp
+BOT_TOKEN = "8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM"
 WEBAPP_URL = "https://todo-telegram-bot-tt80.onrender.com"
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -218,7 +218,7 @@ HTML_PAGE = """<!DOCTYPE html>
 </html>
 """
 
-# --- Работа с tasks.json ---
+# --- Работа со структурой tasks.json ---
 
 def load_all_tasks():
     if not TASKS_FILE.exists():
@@ -280,7 +280,7 @@ def delete_user_task(user_id, task_id):
         return True
     return False
 
-# --- Фоновый воркер напоминаний ---
+# --- Фоновый планировщик напоминаний ---
 
 def notification_worker():
     while True:
@@ -417,7 +417,7 @@ if __name__ == "__main__":
         bot.remove_webhook(drop_pending_updates=True)
         time.sleep(1)
     except Exception as e:
-        print(f"Ошибка Webhook: {e}")
+        print(f"Ошибка сброса webhook: {e}")
 
     while True:
         try:

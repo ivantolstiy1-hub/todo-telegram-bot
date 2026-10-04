@@ -121,6 +121,7 @@ class GeminiProvider(BaseAIProvider):
         temperature: float,
         model_id: str,
         on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> str:
         from services.gemini_service import gemini_service
         # Gemini использует свой оптимизированный формат
@@ -160,6 +161,7 @@ class DeepSeekProvider(BaseAIProvider):
         temperature: float,
         model_id: str,
         on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> str:
         if on_status:
             on_status("🧮 Запрос к DeepSeek API...")
@@ -221,6 +223,7 @@ class OpenAIProvider(BaseAIProvider):
         temperature: float,
         model_id: str,
         on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> str:
         if on_status:
             on_status("🟢 Запрос к OpenAI API (GPT-4o)...")
@@ -265,6 +268,7 @@ class ClaudeProvider(BaseAIProvider):
         temperature: float,
         model_id: str,
         on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> str:
         if on_status:
             on_status("🎭 Запрос к Anthropic Claude API...")
@@ -332,6 +336,7 @@ class OpenRouterProvider(BaseAIProvider):
         temperature: float,
         model_id: str,
         on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> str:
         if on_status:
             on_status(f"🦙 Запрос к OpenRouter ({model_id})...")

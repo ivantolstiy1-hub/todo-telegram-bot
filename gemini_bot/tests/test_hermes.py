@@ -140,5 +140,16 @@ class TestHermesOrchestrator(unittest.TestCase):
             self.assertIsNotNone(banner)
             self.assertIn("Antigravity CLI", banner)
 
+    def test_all_providers_accept_user_id_kwargs(self):
+        """Гарантирует, что все провайдеры корректно принимают user_id и **kwargs."""
+        import inspect
+        for p_name, prov in hermes_service.providers.items():
+            sig = inspect.signature(prov.generate)
+            has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+            self.assertTrue(
+                has_kwargs or "user_id" in sig.parameters,
+                f"Провайдер {p_name} должен принимать **kwargs или user_id"
+            )
+
 if __name__ == "__main__":
     unittest.main()

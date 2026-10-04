@@ -15,9 +15,8 @@ WEBAPP_URL = "https://todo-telegram-bot-tt80.onrender.com"
 BASE_DIR = Path(__file__).resolve().parent
 TASKS_FILE = BASE_DIR / "tasks.json"
 
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# --- Встроенный красивый HTML интерфейс с напоминаниями ---
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -45,7 +44,7 @@ HTML_PAGE = """<!DOCTYPE html>
     .box {
       background: var(--card);
       border-radius: 14px;
-      padding: 12px;
+      padding: 14px;
       margin-bottom: 20px;
       display: flex;
       flex-direction: column;
@@ -55,7 +54,7 @@ HTML_PAGE = """<!DOCTYPE html>
       width: 100%;
       box-sizing: border-box;
       padding: 12px;
-      border: 1px solid rgba(0,0,0,0.1);
+      border: 1px solid rgba(0,0,0,0.12);
       border-radius: 10px;
       background: var(--bg);
       color: var(--text);
@@ -84,7 +83,7 @@ HTML_PAGE = """<!DOCTYPE html>
     .item.done .title { text-decoration: line-through; color: var(--hint); }
     .left { display: flex; align-items: flex-start; gap: 10px; flex: 1; cursor: pointer; }
     .title { font-size: 15px; word-break: break-word; }
-    .time-badge { font-size: 12px; color: #e67e22; margin-top: 3px; }
+    .time-badge { font-size: 12px; color: #e67e22; margin-top: 3px; font-weight: 500; }
     .del { background: none; border: none; color: #ff3b30; font-size: 18px; cursor: pointer; padding: 4px 8px; }
   </style>
 </head>
@@ -184,8 +183,6 @@ HTML_PAGE = """<!DOCTYPE html>
 </html>
 """
 
-# --- База данных tasks.json ---
-
 def load_all_tasks():
     if not TASKS_FILE.exists():
         return {}
@@ -241,8 +238,6 @@ def delete_user_task(uid, tid):
         return True
     return False
 
-# --- Пуш-напоминания по времени ---
-
 def notification_worker():
     while True:
         try:
@@ -271,10 +266,33 @@ def notification_worker():
             if modified:
                 save_all_tasks(data)
         except Exception as e:
-            print(f"Ошибка в воркере: {e}")
+            print(f"Ошибка воркера: {e}")
         time.sleep(20)
 
-# --- Веб-сервер Mini App ---
+@bot.message_handler(commands=['start'])
+def welcome(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(WEBAPP_URL)))
+    markup.add(types.KeyboardButton("📋 Показать список задач"))
+    bot.send_message(
+        message.chat.id,
+        "Привет! Я твой планировщик задач с напоминаниями.\n\nНажми кнопку **«🚀 Открыть Планировщик»** ниже для управления задачами:",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+@bot.message_handler(func=lambda m: m.text == "📋 Показать список задач")
+def send_tasks(message):
+    tasks = get_user_tasks(message.from_user.id)
+    if not tasks:
+        bot.send_message(message.chat.id, "Список задач пуст! 🎉")
+        return
+    text = "📋 **Твои задачи:**\n\n"
+    for t in tasks:
+        icon = "✅" if t.get("done") else "⬜"
+        remind = f" (⏰ {t['remind_at']})" if t.get("remind_at") else ""
+        text += f"{icon} `#{t['id']}` {t['title']}{remind}\n"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 class MiniAppServer(BaseHTTPRequestHandler):
     def _send_json(self, d):
@@ -317,6 +335,17 @@ class MiniAppServer(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
+
+        # Telegram webhook handler
+        if parsed.path == f"/webhook/{BOT_TOKEN}":
+            if body:
+                update_dict = json.loads(body.decode("utf-8"))
+                update = types.Update.de_json(update_dict)
+                bot.process_new_updates([update])
+            self.send_response(200)
+            self.end_headers()
+            return
+
         payload = json.loads(body.decode("utf-8")) if body else {}
         uid = payload.get("userId", "default")
 
@@ -338,47 +367,18 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), MiniAppServer)
     server.serve_forever()
 
-# --- Бот ---
-
-@bot.message_handler(commands=['start'])
-def welcome(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(WEBAPP_URL)))
-    markup.add(types.KeyboardButton("📋 Показать список задач"))
-    bot.send_message(
-        message.chat.id,
-        "Привет! Я твой планировщик задач с напоминаниями.\n\nНажми кнопку **«🚀 Открыть Планировщик»** ниже, чтобы добавить задачи со временем:",
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
-
-@bot.message_handler(func=lambda m: m.text == "📋 Показать список задач")
-def send_tasks(message):
-    tasks = get_user_tasks(message.from_user.id)
-    if not tasks:
-        bot.send_message(message.chat.id, "Список задач пуст! 🎉")
-        return
-    text = "📋 **Твои задачи:**\n\n"
-    for t in tasks:
-        icon = "✅" if t.get("done") else "⬜"
-        remind = f" (⏰ {t['remind_at']})" if t.get("remind_at") else ""
-        text += f"{icon} `#{t['id']}` {t['title']}{remind}\n"
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
 if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
     threading.Thread(target=notification_worker, daemon=True).start()
-    
-    # Защищенный запуск бота
-    time.sleep(3)
-    try:
-        bot.remove_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
 
+    time.sleep(2)
+    # Настраиваем webhook на URL нашего сервиса Render
+    webhook_url = f"{WEBAPP_URL}/webhook/{BOT_TOKEN}"
+    bot.remove_webhook()
+    time.sleep(1)
+    bot.set_webhook(url=webhook_url)
+    print(f"Webhook успешно установлен на {webhook_url}")
+
+    # Держим главный поток активным
     while True:
-        try:
-            bot.polling(none_stop=True, interval=1, timeout=30)
-        except Exception as e:
-            print(f"Polling reconnect: {e}")
-            time.sleep(4)
+        time.sleep(3600)

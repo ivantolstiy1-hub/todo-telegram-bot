@@ -9,7 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot import types
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_TOKEN = os.getenv("8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM", "")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 BASE_DIR = Path(__file__).resolve().parent

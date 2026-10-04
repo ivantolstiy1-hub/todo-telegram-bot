@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Планировщик задач</title>
+  <title>Планировщик с напоминаниями</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
@@ -22,19 +22,24 @@
       padding: 16px;
     }
     h2 { margin-top: 0; font-size: 20px; }
-    .input-box {
+    .input-group {
       display: flex;
+      flex-direction: column;
       gap: 8px;
       margin-bottom: 20px;
     }
-    input[type="text"] {
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+    input[type="text"], input[type="datetime-local"] {
       flex: 1;
       padding: 12px 14px;
       border: 1px solid var(--hint);
       border-radius: 12px;
       background: var(--bg);
       color: var(--text);
-      font-size: 15px;
+      font-size: 14px;
       outline: none;
     }
     button.add-btn {
@@ -60,16 +65,25 @@
       padding: 12px 16px;
       border-radius: 12px;
     }
-    .task-item.done span {
+    .task-item.done span.title {
       text-decoration: line-through;
       color: var(--hint);
     }
     .task-left {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 12px;
       cursor: pointer;
       flex: 1;
+    }
+    .task-content {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .remind-tag {
+      font-size: 11px;
+      color: var(--hint);
     }
     .del-btn {
       background: none;
@@ -84,9 +98,12 @@
 <body>
   <h2>Мои задачи</h2>
 
-  <div class="input-box">
+  <div class="input-group">
     <input type="text" id="taskInput" placeholder="Новая задача..." />
-    <button class="add-btn" onclick="addTask()">OK</button>
+    <div class="input-row">
+      <input type="datetime-local" id="remindInput" />
+      <button class="add-btn" onclick="addTask()">Добавить</button>
+    </div>
   </div>
 
   <div id="tasks" class="task-list"></div>
@@ -96,7 +113,6 @@
     tg.ready();
     tg.expand();
 
-    // Получаем реальный ID пользователя из контекста Telegram
     const userId = (tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user.id : "default";
 
     async function loadTasks() {
@@ -119,10 +135,20 @@
       tasks.forEach(task => {
         const el = document.createElement("div");
         el.className = `task-item ${task.done ? 'done' : ''}`;
+        
+        let remindInfo = "";
+        if (task.remind_at) {
+          const d = new Date(task.remind_at);
+          remindInfo = `<span class="remind-tag">🔔 ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>`;
+        }
+
         el.innerHTML = `
           <div class="task-left" onclick="toggleTask(${task.id})">
             <span>${task.done ? '✅' : '⬜'}</span>
-            <span>${task.title}</span>
+            <div class="task-content">
+              <span class="title">${task.title}</span>
+              ${remindInfo}
+            </div>
           </div>
           <button class="del-btn" onclick="deleteTask(${task.id})">✕</button>
         `;
@@ -132,14 +158,18 @@
 
     async function addTask() {
       const inp = document.getElementById("taskInput");
+      const remindInp = document.getElementById("remindInput");
       const title = inp.value.trim();
+      const remind_at = remindInp.value; // Строка вида "2026-10-04T15:30"
       if (!title) return;
+
       await fetch('/api/add', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ userId, title })
+        body: JSON.stringify({ userId, title, remind_at })
       });
       inp.value = "";
+      remindInp.value = "";
       loadTasks();
     }
 

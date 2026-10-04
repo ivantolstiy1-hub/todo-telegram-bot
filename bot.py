@@ -1,6 +1,8 @@
 import os
 import json
+import time
 import threading
+from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -8,14 +10,14 @@ import telebot
 from telebot import types
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "ВСТАВЬ_ТОКЕН")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # Публичный HTTPS адрес с Render
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 BASE_DIR = Path(__file__).resolve().parent
 TASKS_FILE = BASE_DIR / "tasks.json"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- Работа с tasks.json ---
+# --- Работа со структурой tasks.json ---
 
 def load_all_tasks():
     if not TASKS_FILE.exists():
@@ -37,12 +39,17 @@ def get_user_tasks(user_id):
     data = load_all_tasks()
     return data.get(str(user_id), [])
 
-def add_user_task(user_id, title):
+def add_user_task(user_id, title, remind_at=None):
     data = load_all_tasks()
     uid = str(user_id)
     user_tasks = data.get(uid, [])
     new_id = max([t["id"] for t in user_tasks], default=0) + 1
-    user_tasks.append({"id": new_id, "title": title.strip(), "done": False})
+    user_tasks.append({
+        "id": new_id,
+        "title": title.strip(),
+        "done": False,
+        "remind_at": remind_at if remind_at else None
+    })
     data[uid] = user_tasks
     save_all_tasks(data)
     return new_id
@@ -69,6 +76,44 @@ def delete_user_task(user_id, task_id):
         return True
     return False
 
+# --- Фоновый планировщик push-напоминаний ---
+
+def notification_worker():
+    """Каждые 30 секунд проверяет tasks.json на наступившие напоминания."""
+    while True:
+        try:
+            data = load_all_tasks()
+            now = datetime.now()
+            modified = False
+
+            for uid, tasks in data.items():
+                if uid == "default":
+                    continue
+                for task in tasks:
+                    remind_at_str = task.get("remind_at")
+                    if remind_at_str and not task.get("done"):
+                        try:
+                            remind_time = datetime.fromisoformat(remind_at_str)
+                            if now >= remind_time:
+                                # Отправляем уведомление пользователю в чат
+                                bot.send_message(
+                                    int(uid),
+                                    f"⏰ **Напоминание о задаче!**\n\n📌 {task['title']}",
+                                    parse_mode="Markdown"
+                                )
+                                # Очищаем remind_at, чтобы не спамить повторно
+                                task["remind_at"] = None
+                                modified = True
+                        except Exception as e:
+                            print(f"Ошибка обработки даты: {e}")
+
+            if modified:
+                save_all_tasks(data)
+        except Exception as e:
+            print(f"Ошибка воркера напоминаний: {e}")
+
+        time.sleep(30)
+
 # --- Web Server & API для Telegram Mini App ---
 
 class MiniAppServer(BaseHTTPRequestHandler):
@@ -88,7 +133,7 @@ class MiniAppServer(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/" or parsed.path == "/index.html":
+        if parsed.path in ("/", "/index.html"):
             html_path = BASE_DIR / "index.html"
             if html_path.exists():
                 self.send_response(200)
@@ -118,7 +163,7 @@ class MiniAppServer(BaseHTTPRequestHandler):
         user_id = payload.get("userId", "default")
 
         if parsed.path == "/api/add":
-            new_id = add_user_task(user_id, payload.get("title", ""))
+            new_id = add_user_task(user_id, payload.get("title", ""), payload.get("remind_at"))
             self._send_json({"success": True, "id": new_id})
         elif parsed.path == "/api/toggle":
             success = toggle_user_task(user_id, int(payload.get("id")))
@@ -135,21 +180,19 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), MiniAppServer)
     server.serve_forever()
 
-# --- Telegram Bot Interface ---
+# --- Telegram Bot Handler ---
 
 @bot.message_handler(commands=['start', 'app'])
 def send_welcome(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if WEBAPP_URL:
-        # Кнопка, открывающая Mini App прямо в чате
-        web_app = types.WebAppInfo(WEBAPP_URL)
-        markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=web_app))
-    
+        markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(WEBAPP_URL)))
     markup.add(types.KeyboardButton("📋 Список задач"))
 
     bot.send_message(
         message.chat.id,
-        "👋 Добро пожаловать! Открой приложение кнопкой ниже:",
+        "👋 Планировщик с push-напоминаниями готов!\n"
+        "Открой приложение, чтобы ставить задачи и указывать время для напоминаний:",
         reply_markup=markup
     )
 
@@ -162,10 +205,14 @@ def show_tasks(message):
     text = "📋 **Ваши задачи:**\n\n"
     for t in tasks:
         icon = "✅" if t.get("done") else "⬜"
-        text += f"{icon} `#{t['id']}` {t['title']}\n"
+        remind = f" (🔔 {t['remind_at']})" if t.get("remind_at") else ""
+        text += f"{icon} `#{t['id']}` {t['title']}{remind}\n"
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 if __name__ == "__main__":
+    # 1. Запуск веб-сервера Mini App
     threading.Thread(target=run_server, daemon=True).start()
-    print("Бот и WebApp запущены...")
+    # 2. Запуск фоновой проверки напоминаний
+    threading.Thread(target=notification_worker, daemon=True).start()
+    print("Бот, WebApp и система напоминаний запущены...")
     bot.infinity_polling()

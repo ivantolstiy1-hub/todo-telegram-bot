@@ -9,15 +9,216 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot import types
 
-BOT_TOKEN = os.getenv("8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM", "")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+# ⚠️ Вставь сюда свой рабочий токен от @BotFather:
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7963478523:AAE_example_token_replace_me")
+WEBAPP_URL = "https://todo-telegram-bot-tt80.onrender.com"
 
 BASE_DIR = Path(__file__).resolve().parent
 TASKS_FILE = BASE_DIR / "tasks.json"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- Хранилище tasks.json ---
+# --- Встроенный HTML-интерфейс Mini App ---
+HTML_PAGE = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Мой Планировщик</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #222222);
+      --btn-bg: var(--tg-theme-button-color, #2481cc);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+      --hint: var(--tg-theme-hint-color, #999999);
+      --card-bg: var(--tg-theme-secondary-bg-color, #f4f4f5);
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+    }
+    h2 { margin-top: 0; font-size: 20px; }
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+    input[type="text"], input[type="datetime-local"] {
+      flex: 1;
+      padding: 12px 14px;
+      border: 1px solid var(--hint);
+      border-radius: 12px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    button.add-btn {
+      padding: 12px 18px;
+      background-color: var(--btn-bg);
+      color: var(--btn-text);
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .task-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: var(--card-bg);
+      padding: 12px 16px;
+      border-radius: 12px;
+    }
+    .task-item.done span.title {
+      text-decoration: line-through;
+      color: var(--hint);
+    }
+    .task-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+      flex: 1;
+    }
+    .task-content {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .remind-tag {
+      font-size: 11px;
+      color: var(--hint);
+    }
+    .del-btn {
+      background: none;
+      border: none;
+      color: #ff3b30;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Мои задачи</h2>
+
+  <div class="input-group">
+    <input type="text" id="taskInput" placeholder="Новая задача..." />
+    <div class="input-row">
+      <input type="datetime-local" id="remindInput" />
+      <button class="add-btn" onclick="addTask()">Добавить</button>
+    </div>
+  </div>
+
+  <div id="tasks" class="task-list"></div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const userId = (tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user.id : "default";
+
+    async function loadTasks() {
+      try {
+        const res = await fetch(`/api/tasks?userId=${userId}`);
+        const tasks = await res.json();
+        renderTasks(tasks);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderTasks(tasks) {
+      const container = document.getElementById("tasks");
+      container.innerHTML = "";
+      if (!tasks || tasks.length === 0) {
+        container.innerHTML = '<div style="color: var(--hint); text-align: center; margin-top: 20px;">Нет задач 🎉</div>';
+        return;
+      }
+      tasks.forEach(task => {
+        const el = document.createElement("div");
+        el.className = `task-item ${task.done ? 'done' : ''}`;
+        
+        let remindInfo = "";
+        if (task.remind_at) {
+          const d = new Date(task.remind_at);
+          remindInfo = `<span class="remind-tag">🔔 ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>`;
+        }
+
+        el.innerHTML = `
+          <div class="task-left" onclick="toggleTask(${task.id})">
+            <span>${task.done ? '✅' : '⬜'}</span>
+            <div class="task-content">
+              <span class="title">${task.title}</span>
+              ${remindInfo}
+            </div>
+          </div>
+          <button class="del-btn" onclick="deleteTask(${task.id})">✕</button>
+        `;
+        container.appendChild(el);
+      });
+    }
+
+    async function addTask() {
+      const inp = document.getElementById("taskInput");
+      const remindInp = document.getElementById("remindInput");
+      const title = inp.value.trim();
+      const remind_at = remindInp.value;
+      if (!title) return;
+
+      await fetch('/api/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ userId, title, remind_at })
+      });
+      inp.value = "";
+      remindInp.value = "";
+      loadTasks();
+    }
+
+    async function toggleTask(id) {
+      await fetch('/api/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ userId, id })
+      });
+      loadTasks();
+    }
+
+    async function deleteTask(id) {
+      await fetch('/api/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ userId, id })
+      });
+      loadTasks();
+    }
+
+    loadTasks();
+  </script>
+</body>
+</html>
+"""
+
+# --- Работа с tasks.json ---
 
 def load_all_tasks():
     if not TASKS_FILE.exists():
@@ -36,7 +237,7 @@ def save_all_tasks(data):
         with open(TASKS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"Ошибка сохранения tasks.json: {e}")
+        print(f"Ошибка сохранения: {e}")
 
 def get_user_tasks(user_id):
     data = load_all_tasks()
@@ -114,7 +315,7 @@ def notification_worker():
 
         time.sleep(25)
 
-# --- Веб-сервер Mini App ---
+# --- HTTP Сервер Mini App ---
 
 class MiniAppServer(BaseHTTPRequestHandler):
     def _send_json(self, data):
@@ -125,7 +326,6 @@ class MiniAppServer(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data).encode("utf-8"))
 
     def do_HEAD(self):
-        # Ответ для проверок Render Health Check
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
@@ -142,26 +342,10 @@ class MiniAppServer(BaseHTTPRequestHandler):
         path = parsed.path
 
         if path in ("/", "/index.html"):
-            # Пробуем несколько путей до index.html
-            candidates = [
-                BASE_DIR / "index.html",
-                Path("index.html").resolve(),
-                Path.cwd() / "index.html"
-            ]
-            html_file = next((c for c in candidates if c.is_file()), None)
-
-            if html_file:
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.end_headers()
-                with open(html_file, "rb") as f:
-                    self.wfile.write(f.read())
-            else:
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.end_headers()
-                # Запасной рендер, если файл не найден в файловой системе Render
-                self.wfile.write(b"<h1>Mini App is loading...</h1><script>location.reload();</script>")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(HTML_PAGE.encode("utf-8"))
         elif path == "/api/tasks":
             qs = parse_qs(parsed.query)
             user_id = qs.get("userId", ["default"])[0]
@@ -193,7 +377,7 @@ class MiniAppServer(BaseHTTPRequestHandler):
             self.end_headers()
 
 def run_server():
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.getenv("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), MiniAppServer)
     server.serve_forever()
 
@@ -202,13 +386,12 @@ def run_server():
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    if WEBAPP_URL:
-        markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(WEBAPP_URL)))
+    markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(WEBAPP_URL)))
     markup.add(types.KeyboardButton("📋 Список задач"))
 
     bot.send_message(
         message.chat.id,
-        "👋 Планировщик готов к работе!\nНажмите кнопку ниже или используйте кнопку меню для открытия списка задач:",
+        "👋 Планировщик готов к работе!\nНажмите кнопку ниже, чтобы открыть список задач:",
         reply_markup=markup
     )
 
@@ -230,12 +413,11 @@ if __name__ == "__main__":
     threading.Thread(target=notification_worker, daemon=True).start()
     print("Бот и WebApp запущены...")
     
-    # Сбрасываем зависшие соединения Telegram перед стартом
     try:
         bot.remove_webhook(drop_pending_updates=True)
         time.sleep(1)
     except Exception as e:
-        print(f"Ошибка сброса webhook: {e}")
+        print(f"Ошибка Webhook: {e}")
 
     while True:
         try:

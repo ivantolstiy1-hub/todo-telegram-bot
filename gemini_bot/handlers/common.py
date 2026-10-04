@@ -261,7 +261,8 @@ def register_common_handlers(bot: TeleBot):
     @bot.message_handler(commands=["video", "kling", "luma"])
     def cmd_video(message: types.Message):
         user_id = message.from_user.id
-        parts = message.text.split(maxsplit=1)
+        raw_text = message.text or message.caption or ""
+        parts = raw_text.split(maxsplit=1)
         if len(parts) > 1 and parts[1].strip():
             # Запрос с описанием видео прямо в команде
             prompt = parts[1].strip()

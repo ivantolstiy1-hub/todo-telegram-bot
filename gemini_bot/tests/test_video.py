@@ -52,7 +52,18 @@ class TestVideoAI(unittest.TestCase):
         self.assertIn("Kling AI 1.5", storyboard)
         self.assertIn("Luma Dream Machine", storyboard)
         self.assertIn("Runway Gen-3", storyboard)
-        self.assertIn("Minimax Hailuo", storyboard)
+    def test_video_director_clown_meme_transition(self):
+        """Проверка генерации специализированного плана для клоунского мем-перехода."""
+        prompt = "Сделай из этого видео переход в то как я перекрашиваю лицо в клоунское в мемном формате, не меняя фон и черты лица"
+        plan = VideoDirector.build_storyboard_plan(prompt, aspect_ratio="9:16")
+        self.assertIn("МЕМ-ТРАНСФОРМАЦИЯ ЛИЦА", plan)
+        self.assertIn("Клоунский грим", plan)
+        self.assertIn("Face-Lock", plan)
+        self.assertIn("Honk-Honk", plan)
+        self.assertIn("Entry of the Gladiators", plan)
+        self.assertIn("CapCut", plan)
+        self.assertIn("Kling AI 1.5", plan)
+        self.assertIn("Luma Dream Machine", plan)
 
     def test_extract_video_url(self):
         """Проверка парсинга URL видео из текста ответа."""

@@ -295,6 +295,87 @@ class VideoDirector:
     """
 
     @classmethod
+    def build_meme_transformation_plan(
+        cls,
+        user_idea: str,
+        aspect_ratio: str = "9:16",
+        duration_sec: int = 12,
+    ) -> str:
+        """
+        Специализированный режиссерский монтажный план для вирусных мем-трансформаций
+        (например: перекрашивание в клоуна, морфинг лица, сохранение идентичности и фона).
+        """
+        format_label = "📱 Вертикальный (9:16 Shorts / Reels / TikTok)" if "9:16" in aspect_ratio else "🖥 Горизонтальный (16:9)"
+
+        storyboard = f"""🎬 *РЕЖИССЕРСКИЙ МОНТАЖНЫЙ ПЛАН: МЕМ-ТРАНСФОРМАЦИЯ ЛИЦА*
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 *Задача:* {user_idea}
+🎭 *Жанр:* Вирусный тренд «Клоунский грим / Clown Makeup Meme Morph»
+📐 *Формат:* `{format_label}`
+⏱ *Хронометраж:* `{duration_sec} сек.`
+🔒 *Ключевое условие:* Сохранение идентичности лица (Face-Lock) и фона комнаты на 100%!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 *ПОСЕКУНДНАЯ РАСКАДРОВКА (STORYBOARD)*
+
+⏱ *Сцена 1: [00:00 — 00:03] — Исходный вид (Base Shot)*
+• *Визуал:* Крупный план лица девушки с белой базой под макияж (ровно как в прикрепленном видео). Прямой, нейтрально-серьезный взгляд в камеру.
+• *Фон и свет:* Интерьер комнаты, мягкий фронтальный свет, сохранение геометрии.
+• *Действие:* Девушка делает секундную паузу, слегка приподнимает бровь.
+• *Звук:* Начало вирусного трека (*Entry of the Gladiators Trap Remix*).
+
+⏱ *Сцена 2: [00:03 — 00:05] — Мемный триггер / Переход (Transition)*
+• *Визуал:* Быстрый жест (взмах кистью перед объективом, щелчок пальцами или резкий кивок).
+• *Монтажный эффект:* Whip-pan (хлыстовой зум) + Motion Glitch (эффект помех).
+• *Звуковой эффект (SFX):* Резкий свистящий *Whoosh* переход + мемный *Vine Boom Impact*.
+
+⏱ *Сцена 3: [00:05 — 00:09] — AI-Морфинг в клоунский грим (Clown Morph)*
+• *Визуал:* Мгновенная трансформация поверх белой основы:
+  - Появление яркого круглого красного клоунского носа.
+  - Контрастная гиперболизированная алая улыбка с приподнятыми уголками.
+  - Поп-арт синие стрелки/слезы под глазами.
+• *Ключевой AI-параметр:* Точное сохранение черт лица, формы глаз, мимики и фона комнаты!
+• *Музыка:* Мощный цирковой трэп-бит дроп (Circus Theme Trap Drop).
+
+⏱ *Сцена 4: [00:09 — 00:12] — Финальный панчлайн (Deadpan Reaction)*
+• *Визуал:* Неподвижный, слегка самоироничный взгляд в камеру (Deadpan / Poker Face) с клоунским гримом.
+• *Текст на экране:* Мемная подпись (например: *«Я, когда снова поверила обещаниям:»*).
+• *Звуковой эффект (SFX):* Мемный двойной клаксон (*Honk-Honk!* 🤡) + затихающий бит.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎵 *САУНД-ДИЗАЙН И МУЗЫКА*
+• *Главный трек:* `Julius Fučík - Entry of the Gladiators (Circus Trap Remix / Phonk)`
+• *SFX пакет:*
+  1. `whoosh_fast.mp3` — на переходе (00:03).
+  2. `clown_horn_honk.mp3` — звук клаксона на появлении грима (00:05).
+  3. `sad_trombone.mp3` или `vine_boom.mp3` — на панчлайне (00:10).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎥 *ГОТОВЫЕ ПРОМПТЫ ДЛЯ ТОП НЕЙРОСЕТЕЙ (VIDEO-TO-VIDEO):*
+
+1️⃣ *Для Kling AI 1.5 (Video-to-Video & Image-to-Video):*
+`video-to-video style transition, young woman with white face base makeup seamlessly transforms into a funny clown meme makeup, bright round red clown nose, exaggerated artistic red clown smile, blue tear accents on cheeks, maintaining exact same face identity, identical facial structure, identical room background and ambient lighting, high temporal consistency, photorealistic 4k, stable motion, no distortion`
+
+2️⃣ *Для Luma Dream Machine Ray 2 (Keyframe Transition):*
+`Start frame: young woman with white foundation makeup looking at camera in room. End frame: exact same woman with vibrant meme clown face paint, round red clown nose, theatrical smile, locked facial landmarks and identical indoor room, smooth seamless morphing transition, 35mm lens, photorealistic`
+
+3️⃣ *Для Runway Gen-3 Alpha (Video-to-Video Style Transfer):*
+`Video-to-video motion transfer, meme clown makeup transition, preserve exact female facial geometry and room background, clean vibrant clown paint, red nose, expressive clown smile, stable lighting, photorealistic 24fps film grain`
+
+4️⃣ *Для Minimax Hailuo AI:*
+`Consistent face identity, video to video clown makeup transition, natural facial movement, preserve indoor background, smooth realistic transition`
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✂️ *ИНСТРУКЦИЯ ПО МОНТАЖУ В CAPCUT ЗА 2 МИНУТЫ:*
+1. Импортируйте ваше видео в CapCut.
+2. Сделайте разрез на 3-й секунде.
+3. Ко второй части примените эффект перехода: **«Размытие при движении» (Motion Blur)** или **«Глитч»**.
+4. Добавьте стикер/эффект клоунского носа и улыбки из вкладки *«Эффекты тела» -> «Макияж»*.
+5. Наложите звуковой эффект *Clown Horn (Клаксон)* ровно в момент перехода!
+"""
+        return storyboard
+
+    @classmethod
     def build_storyboard_plan(
         cls,
         user_idea: str,
@@ -304,6 +385,10 @@ class VideoDirector:
         """
         Формирует подробный режиссерский монтажный лист для Shorts / Reels / YouTube / TikTok.
         """
+        user_idea_lower = user_idea.lower()
+        if any(k in user_idea_lower for k in ["клон", "клоун", "грим", "переход", "мем", "морф", "clown", "makeup", "макияж", "превращени"]):
+            return cls.build_meme_transformation_plan(user_idea, aspect_ratio=aspect_ratio, duration_sec=12)
+
         enhanced_prompt = CinematicPromptEnhancer.enhance(user_idea, aspect_ratio)
         format_label = "📱 Вертикальный (9:16 Shorts / Reels / TikTok)" if "9:16" in aspect_ratio else "🖥 Горизонтальный (16:9 YouTube / Кино)"
 
@@ -428,9 +513,14 @@ class VideoService:
         elif "16:9" in prompt or "горизонтал" in prompt.lower() or "youtube" in prompt.lower() or "широкоформатн" in prompt.lower():
             aspect_ratio = "16:9"
 
-        # Очищаем промпт от сервисных слов
-        clean_idea = re.sub(r"(?:сгенерируй|создай|смонтируй|сделай)?\s*(?:видео|ролик|клип|рилс|shorts|анимацию)?\s*(?:через\s*(?:luma|kling|fal|runway))?[:,\s]*", "", prompt, flags=re.IGNORECASE).strip()
-        if not clean_idea:
+        # Очищаем сервисный префикс в начале промпта
+        clean_idea = re.sub(
+            r"^(?:видео|video|сгенерируй|создай|смонтируй|сделай)?\s*(?:видео|ролик|клип|рилс|shorts|анимацию)?\s*(?:через\s*(?:luma|kling|fal|runway))?[:,\s]*",
+            "",
+            prompt.strip(),
+            flags=re.IGNORECASE
+        ).strip()
+        if not clean_idea or len(clean_idea) < 3:
             clean_idea = prompt.strip()
 
         # Попытка прямой генерации видео при наличии API ключей

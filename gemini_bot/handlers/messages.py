@@ -1,4 +1,5 @@
 import io
+import time
 import threading
 import logging
 from telebot import TeleBot, types
@@ -19,6 +20,8 @@ from services.self_config_service import self_config_service
 from utils.helpers import safe_send_message
 
 logger = logging.getLogger(__name__)
+
+LAST_USER_MEDIA = {}
 
 
 def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, user_text: str):
@@ -281,6 +284,29 @@ def register_message_handlers(bot: TeleBot):
                 f"⚠️ Не удалось обработать фото:\n_{str(e)}_",
                 reply_to_message_id=message.message_id
             )
+
+    @bot.message_handler(content_types=["video", "video_note"])
+    def handle_video(message: types.Message):
+        user_id = message.from_user.id
+        ensure_user(user_id, username=message.from_user.username, first_name=message.from_user.first_name)
+        caption = (message.caption or "").strip()
+
+        video_obj = message.video or message.video_note
+        if video_obj:
+            LAST_USER_MEDIA[user_id] = {
+                "type": "video",
+                "file_id": video_obj.file_id,
+                "timestamp": time.time()
+            }
+
+        prompt = caption
+        if prompt.startswith("/video"):
+            prompt = prompt[len("/video"):].strip()
+
+        if not prompt:
+            prompt = "Сделай подробный режиссерский монтажный план, раскадровку и сценарий для этого видео"
+
+        _process_user_prompt(bot, message, user_id, f"видео: {prompt}")
 
     @bot.message_handler(content_types=["document"])
     def handle_document(message: types.Message):

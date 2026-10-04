@@ -1,4 +1,11 @@
 import sys
+from pathlib import Path
+
+# Добавляем директорию бота в sys.path для корректных импортов при запуске из корня
+BOT_DIR = Path(__file__).resolve().parent
+if str(BOT_DIR) not in sys.path:
+    sys.path.insert(0, str(BOT_DIR))
+
 import logging
 from telebot import TeleBot, types
 from config import TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, DEFAULT_MODEL

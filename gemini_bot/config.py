@@ -10,10 +10,14 @@ warnings.filterwarnings("ignore", category=UserWarning)
 BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
 
-if ENV_FILE.exists():
-    load_dotenv(ENV_FILE)
-else:
-    load_dotenv()
+try:
+    from dotenv import load_dotenv
+    if ENV_FILE.exists():
+        load_dotenv(ENV_FILE)
+    else:
+        load_dotenv()
+except ImportError:
+    pass
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 

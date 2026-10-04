@@ -403,11 +403,16 @@ class VideoDirectorProvider(BaseAIProvider):
         aspect_ratio = kwargs.get("aspect_ratio", "16:9")
         duration = kwargs.get("duration", 5)
 
+        source_media = kwargs.get("source_media")
+        media_type = kwargs.get("media_type")
+
         result = video_service.generate_or_direct(
             prompt=prompt,
             aspect_ratio=aspect_ratio,
             duration_sec=duration,
-            on_status=on_status
+            on_status=on_status,
+            source_media=source_media,
+            media_type=media_type,
         )
         return result["text"]
 
@@ -659,6 +664,7 @@ class HermesOrchestrator:
         user_message: str,
         target_model: Optional[str] = None,
         on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> str:
         """
         Главная точка входа для общения с Агентом Гермес:
@@ -718,6 +724,7 @@ class HermesOrchestrator:
                 model_id=actual_model_id,
                 on_status=on_status,
                 user_id=user_id,
+                **kwargs
             )
         except Exception as e:
             logger.warning(f"Ошибка провайдера {provider.name} ({actual_model_id}): {e}. Переключаюсь на каскад Gemini...")

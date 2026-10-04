@@ -24,7 +24,14 @@ logger = logging.getLogger(__name__)
 LAST_USER_MEDIA = {}
 
 
-def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, user_text: str):
+def _process_user_prompt(
+    bot: TeleBot,
+    message: types.Message,
+    user_id: int,
+    user_text: str,
+    source_media=None,
+    media_type=None,
+):
     """
     Единая точка входа для обработки запроса пользователя (текстового или расшифрованного из голоса).
     Маршрутизирует запрос либо в Агент Гермес (Мульти-LLM), либо в Antigravity Agent (CLI).
@@ -164,7 +171,13 @@ def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, use
             pass
 
     try:
-        reply = hermes_service.chat(user_id=user_id, user_message=user_text, on_status=on_direct_status)
+        reply = hermes_service.chat(
+            user_id=user_id,
+            user_message=user_text,
+            on_status=on_direct_status,
+            source_media=source_media,
+            media_type=media_type,
+        )
         if dynamic_status_msg_id:
             try:
                 bot.delete_message(message.chat.id, dynamic_status_msg_id)
@@ -260,14 +273,47 @@ def register_message_handlers(bot: TeleBot):
     def handle_photo(message: types.Message):
         user_id = message.from_user.id
         ensure_user(user_id, username=message.from_user.username, first_name=message.from_user.first_name)
-        caption = message.caption or ""
+        caption = (message.caption or "").strip()
+
+        photo_info = message.photo[-1]
+        LAST_USER_MEDIA[user_id] = {
+            "type": "photo",
+            "file_id": photo_info.file_id,
+            "timestamp": time.time()
+        }
 
         bot.send_chat_action(message.chat.id, "typing")
 
         try:
-            photo_info = message.photo[-1]
             file_info = bot.get_file(photo_info.file_id)
             downloaded_file = bot.download_file(file_info.file_path)
+
+            caption_lower = caption.lower()
+            is_video_request = (
+                caption_lower.startswith("/video")
+                or "видео" in caption_lower
+                or "video" in caption_lower
+                or "оживи" in caption_lower
+                or "анимируй" in caption_lower
+                or "kling" in caption_lower
+                or "luma" in caption_lower
+            )
+
+            if is_video_request:
+                prompt = caption
+                if prompt.startswith("/video"):
+                    prompt = prompt[len("/video"):].strip()
+                if not prompt:
+                    prompt = "Оживи это изображение в кинематографичное динамичное видео"
+                _process_user_prompt(
+                    bot,
+                    message,
+                    user_id,
+                    f"видео: {prompt}",
+                    source_media=downloaded_file,
+                    media_type="photo"
+                )
+                return
 
             reply = gemini_service.analyze_image(
                 user_id=user_id,
@@ -306,7 +352,22 @@ def register_message_handlers(bot: TeleBot):
         if not prompt:
             prompt = "Сделай подробный режиссерский монтажный план, раскадровку и сценарий для этого видео"
 
-        _process_user_prompt(bot, message, user_id, f"видео: {prompt}")
+        # Предварительно скачиваем видеофайл для передачи в Video-to-Video
+        video_bytes = None
+        try:
+            file_info = bot.get_file(video_obj.file_id)
+            video_bytes = bot.download_file(file_info.file_path)
+        except Exception as e:
+            logger.warning(f"Не удалось предварительно скачать видеофайл: {e}")
+
+        _process_user_prompt(
+            bot,
+            message,
+            user_id,
+            f"видео: {prompt}",
+            source_media=video_bytes,
+            media_type="video"
+        )
 
     @bot.message_handler(content_types=["document"])
     def handle_document(message: types.Message):

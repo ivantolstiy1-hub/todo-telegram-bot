@@ -16,7 +16,7 @@ import time
 import logging
 import requests
 from abc import ABC, abstractmethod
-from typing import Optional, Callable, Dict, Any, List, Tuple
+from typing import Optional, Callable, Dict, Any, List, Tuple, Union
 
 from config import (
     FAL_KEY,
@@ -241,6 +241,137 @@ class FalVideoProvider(BaseVideoProvider):
                 raise RuntimeError(f"Fal.ai generation failed: {error_msg}")
 
         raise TimeoutError("Время ожидания генерации видео в Fal.ai истекло (> 3 минут)")
+
+    def upload_media_if_needed(self, media_data: Union[str, bytes], content_type: str = "video/mp4") -> str:
+        """
+        Загружает локальные байты или файл в Fal CDN и возвращает публичный URL.
+        Если уже передан HTTP(S) URL, возвращает его без изменений.
+        """
+        if isinstance(media_data, str) and (media_data.startswith("http://") or media_data.startswith("https://")):
+            return media_data
+
+        try:
+            import fal_client
+            key = self.api_key or "mock_fal_key"
+            os.environ["FAL_KEY"] = key
+            if isinstance(media_data, bytes):
+                return fal_client.upload(media_data, content_type=content_type)
+            elif isinstance(media_data, str) and os.path.exists(media_data):
+                return fal_client.upload_file(media_data)
+        except Exception as e:
+            logger.warning(f"Ошибка загрузки в Fal CDN: {e}")
+            raise
+        return str(media_data)
+
+    def generate_video_to_video(
+        self,
+        video_input: Union[str, bytes],
+        prompt: str,
+        negative_prompt: str = "ugly, deformed, low quality, distortion, blurry, low resolution, face distortion, changing background, changing lighting",
+        strength: float = 0.6,
+        duration_sec: int = 5,
+        on_status: Optional[Callable[[str], None]] = None,
+        model_name: str = "fal-ai/kling/v1.5/video-to-video",
+    ) -> Dict[str, Any]:
+        if not self.is_configured():
+            raise RuntimeError("FAL_KEY не настроен")
+        key = self.api_key or "mock_fal_key"
+        os.environ["FAL_KEY"] = key
+
+        if on_status:
+            on_status("📤 Подготовка и загрузка исходного видео в Kling AI 1.5...")
+
+        video_url = self.upload_media_if_needed(video_input, content_type="video/mp4")
+
+        if on_status:
+            on_status("🎬 Kling AI 1.5: Запуск Video-to-Video трансформации... ⏳")
+
+        duration_str = "5" if duration_sec <= 5 else "10"
+        arguments = {
+            "video_url": video_url,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "strength": strength,
+            "duration": duration_str,
+        }
+
+        try:
+            import fal_client
+            handler = fal_client.submit(model_name, arguments=arguments)
+            result = handler.get()
+            out_url = result.get("video", {}).get("url")
+            if out_url:
+                return {
+                    "status": "completed",
+                    "video_url": out_url,
+                    "provider": "Fal.ai (Kling AI 1.5 Video-to-Video)",
+                    "details": "Video-to-Video transformation completed via Kling 1.5",
+                }
+        except Exception as e:
+            err_str = str(e)
+            if "Exhausted" in err_str or "locked" in err_str.lower() or "403" in err_str:
+                raise RuntimeError(
+                    "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
+                    "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing для генерации видео."
+                )
+            raise RuntimeError(f"Kling Video-to-Video error: {err_str}")
+
+        raise RuntimeError("Не удалось получить видео из ответа Kling AI 1.5")
+
+    def generate_image_to_video(
+        self,
+        image_input: Union[str, bytes],
+        prompt: str,
+        negative_prompt: str = "ugly, deformed, noise, blurry, low resolution, motion blur, bad anatomy",
+        duration_sec: int = 5,
+        mode: str = "pro",
+        on_status: Optional[Callable[[str], None]] = None,
+        model_name: str = "fal-ai/kling/v1.5/image-to-video",
+    ) -> Dict[str, Any]:
+        if not self.is_configured():
+            raise RuntimeError("FAL_KEY не настроен")
+        key = self.api_key or "mock_fal_key"
+        os.environ["FAL_KEY"] = key
+
+        if on_status:
+            on_status("📤 Подготовка исходного фото в Kling AI 1.5...")
+
+        image_url = self.upload_media_if_needed(image_input, content_type="image/jpeg")
+
+        if on_status:
+            on_status("🎬 Kling AI 1.5: Запуск Image-to-Video анимации... ⏳")
+
+        duration_str = "5" if duration_sec <= 5 else "10"
+        arguments = {
+            "image_url": image_url,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "duration": duration_str,
+            "mode": mode,
+        }
+
+        try:
+            import fal_client
+            handler = fal_client.submit(model_name, arguments=arguments)
+            result = handler.get()
+            out_url = result.get("video", {}).get("url")
+            if out_url:
+                return {
+                    "status": "completed",
+                    "video_url": out_url,
+                    "provider": "Fal.ai (Kling AI 1.5 Image-to-Video)",
+                    "details": "Image-to-Video animation completed via Kling 1.5",
+                }
+        except Exception as e:
+            err_str = str(e)
+            if "Exhausted" in err_str or "locked" in err_str.lower() or "403" in err_str:
+                raise RuntimeError(
+                    "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
+                    "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing для генерации видео."
+                )
+            raise RuntimeError(f"Kling Image-to-Video error: {err_str}")
+
+        raise RuntimeError("Не удалось получить видео из ответа Kling AI 1.5")
 
 
 # =====================================================================
@@ -514,16 +645,18 @@ class VideoService:
         duration_sec: int = 5,
         on_status: Optional[Callable[[str], None]] = None,
         force_storyboard_only: bool = False,
+        source_media: Optional[Union[str, bytes]] = None,
+        media_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Главный метод:
-        1. Если ключи FAL_KEY или LUMA_API_KEY настроены и не форсирован только storyboard:
-           - Пробует сгенерировать настоящее видео через Fal.ai (Kling) или Luma.
-           - Возвращает прямую ссылку на .mp4 + режиссерский комментарий.
-        2. Если ключи не заданы (Zero-Crash Mode) или запрос ориентирован на монтаж/сценарий:
+        1. Если передано исходное видео (Video-to-Video) или фото (Image-to-Video) и настроен FAL_KEY:
+           - Запускает трансформацию через Kling AI 1.5 Video-to-Video или Image-to-Video.
+        2. Если текстовый запрос и ключи настроены:
+           - Пробует сгенерировать видео через Fal.ai (Kling) или Luma.
+        3. Если ключи не заданы или исчерпан баланс (Zero-Crash Mode):
            - Создает детальный Режиссерский монтажный план (Director's Cut Storyboard)
            - Генерирует готовые промпты под все популярные нейросети
-           - Дает подсказку, как в один клик подключить ключи генерации.
         """
         # Проверяем наличие соотношения сторон в промпте
         if "9:16" in prompt or "вертикальн" in prompt.lower() or "shorts" in prompt.lower() or "рилс" in prompt.lower() or "reels" in prompt.lower():
@@ -549,15 +682,30 @@ class VideoService:
             # Выбираем провайдер: Luma или Fal
             provider = self.fal if self.fal.is_configured() else self.luma
             try:
-                if on_status:
-                    on_status(f"🎬 Генерация видео через {provider.display_name}... ⏳")
+                if source_media and media_type == "video" and self.fal.is_configured():
+                    result = self.fal.generate_video_to_video(
+                        video_input=source_media,
+                        prompt=enhanced_eng,
+                        duration_sec=duration_sec,
+                        on_status=on_status,
+                    )
+                elif source_media and media_type == "photo" and self.fal.is_configured():
+                    result = self.fal.generate_image_to_video(
+                        image_input=source_media,
+                        prompt=enhanced_eng,
+                        duration_sec=duration_sec,
+                        on_status=on_status,
+                    )
+                else:
+                    if on_status:
+                        on_status(f"🎬 Генерация видео через {provider.display_name}... ⏳")
 
-                result = provider.generate_video(
-                    prompt=enhanced_eng,
-                    aspect_ratio=aspect_ratio,
-                    duration_sec=duration_sec,
-                    on_status=on_status,
-                )
+                    result = provider.generate_video(
+                        prompt=enhanced_eng,
+                        aspect_ratio=aspect_ratio,
+                        duration_sec=duration_sec,
+                        on_status=on_status,
+                    )
                 video_url = result.get("video_url")
                 if video_url:
                     text_reply = (

@@ -257,6 +257,69 @@ class TestVideoAI(unittest.TestCase):
                 if orig:
                     os.environ["FAL_KEY"] = orig
 
+    def test_kling_video_to_video_mock(self):
+        """Проверка работы Kling AI 1.5 Video-to-Video с моком fal_client."""
+        prov = FalVideoProvider()
+        fake_url = "https://fal.media/files/kling/transformed_clown.mp4"
+
+        mock_handler = MagicMock()
+        mock_handler.get.return_value = {"video": {"url": fake_url}}
+
+        with patch.object(prov, "is_configured", return_value=True), \
+             patch("fal_client.submit", return_value=mock_handler) as mock_submit:
+            res = prov.generate_video_to_video(
+                video_input="https://example.com/source.mp4",
+                prompt="clown meme face transformation",
+                strength=0.7,
+                duration_sec=5
+            )
+            self.assertEqual(res["status"], "completed")
+            self.assertEqual(res["video_url"], fake_url)
+            mock_submit.assert_called_once()
+            args = mock_submit.call_args[1]["arguments"]
+            self.assertEqual(args["video_url"], "https://example.com/source.mp4")
+            self.assertEqual(args["strength"], 0.7)
+
+    def test_kling_image_to_video_mock(self):
+        """Проверка работы Kling AI 1.5 Image-to-Video с моком fal_client."""
+        prov = FalVideoProvider()
+        fake_url = "https://fal.media/files/kling/animated_portrait.mp4"
+
+        mock_handler = MagicMock()
+        mock_handler.get.return_value = {"video": {"url": fake_url}}
+
+        with patch.object(prov, "is_configured", return_value=True), \
+             patch("fal_client.submit", return_value=mock_handler) as mock_submit:
+            res = prov.generate_image_to_video(
+                image_input="https://example.com/source.jpg",
+                prompt="animate face into clown",
+                duration_sec=5
+            )
+            self.assertEqual(res["status"], "completed")
+            self.assertEqual(res["video_url"], fake_url)
+            mock_submit.assert_called_once()
+            args = mock_submit.call_args[1]["arguments"]
+            self.assertEqual(args["image_url"], "https://example.com/source.jpg")
+
+    def test_generate_or_direct_with_source_video(self):
+        """Проверка вызова generate_video_to_video при наличии source_media в generate_or_direct."""
+        fake_url = "https://fal.media/files/kling/output_v2v.mp4"
+        with patch.object(video_service.fal, "is_configured", return_value=True), \
+             patch.object(video_service.fal, "generate_video_to_video", return_value={
+                 "status": "completed",
+                 "video_url": fake_url,
+                 "provider": "Fal.ai (Kling AI 1.5 Video-to-Video)",
+                 "details": "ok"
+             }) as mock_v2v:
+            res = video_service.generate_or_direct(
+                prompt="сделай переход в клоуна",
+                source_media="https://example.com/source.mp4",
+                media_type="video"
+            )
+            self.assertEqual(res["status"], "completed")
+            self.assertEqual(res["video_url"], fake_url)
+            mock_v2v.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

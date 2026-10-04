@@ -9,7 +9,6 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot import types
 
-# Жестко заданный токен и URL WebApp
 BOT_TOKEN = "8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM"
 WEBAPP_URL = "https://todo-telegram-bot-tt80.onrender.com"
 
@@ -18,7 +17,7 @@ TASKS_FILE = BASE_DIR / "tasks.json"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- Встроенный HTML-интерфейс Mini App ---
+# --- Встроенный красивый HTML интерфейс с напоминаниями ---
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -29,105 +28,77 @@ HTML_PAGE = """<!DOCTYPE html>
   <style>
     :root {
       --bg: var(--tg-theme-bg-color, #ffffff);
-      --text: var(--tg-theme-text-color, #222222);
-      --btn-bg: var(--tg-theme-button-color, #2481cc);
+      --text: var(--tg-theme-text-color, #111111);
+      --btn: var(--tg-theme-button-color, #2481cc);
       --btn-text: var(--tg-theme-button-text-color, #ffffff);
-      --hint: var(--tg-theme-hint-color, #999999);
-      --card-bg: var(--tg-theme-secondary-bg-color, #f4f4f5);
+      --hint: var(--tg-theme-hint-color, #8e8e93);
+      --card: var(--tg-theme-secondary-bg-color, #f2f2f7);
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: var(--bg);
+      background: var(--bg);
       color: var(--text);
       margin: 0;
       padding: 16px;
     }
-    h2 { margin-top: 0; font-size: 20px; }
-    .input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+    h2 { margin: 0 0 16px 0; font-size: 22px; font-weight: 700; }
+    .box {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 12px;
       margin-bottom: 20px;
-    }
-    .input-row {
-      display: flex;
-      gap: 8px;
-    }
-    input[type="text"], input[type="datetime-local"] {
-      flex: 1;
-      padding: 12px 14px;
-      border: 1px solid var(--hint);
-      border-radius: 12px;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 14px;
-      outline: none;
-    }
-    button.add-btn {
-      padding: 12px 18px;
-      background-color: var(--btn-bg);
-      color: var(--btn-text);
-      border: none;
-      border-radius: 12px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .task-list {
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
-    .task-item {
+    input[type="text"], input[type="datetime-local"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+    }
+    .btn-add {
+      background: var(--btn);
+      color: var(--btn-text);
+      border: none;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .list { display: flex; flex-direction: column; gap: 8px; }
+    .item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background-color: var(--card-bg);
-      padding: 12px 16px;
+      background: var(--card);
+      padding: 12px 14px;
       border-radius: 12px;
     }
-    .task-item.done span.title {
-      text-decoration: line-through;
-      color: var(--hint);
-    }
-    .task-left {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      cursor: pointer;
-      flex: 1;
-    }
-    .task-content {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .remind-tag {
-      font-size: 11px;
-      color: var(--hint);
-    }
-    .del-btn {
-      background: none;
-      border: none;
-      color: #ff3b30;
-      font-size: 18px;
-      cursor: pointer;
-      padding: 4px;
-    }
+    .item.done .title { text-decoration: line-through; color: var(--hint); }
+    .left { display: flex; align-items: flex-start; gap: 10px; flex: 1; cursor: pointer; }
+    .title { font-size: 15px; word-break: break-word; }
+    .time-badge { font-size: 12px; color: #e67e22; margin-top: 3px; }
+    .del { background: none; border: none; color: #ff3b30; font-size: 18px; cursor: pointer; padding: 4px 8px; }
   </style>
 </head>
 <body>
-  <h2>Мои задачи</h2>
+  <h2>📝 Задачи и напоминания</h2>
 
-  <div class="input-group">
-    <input type="text" id="taskInput" placeholder="Новая задача..." />
-    <div class="input-row">
-      <input type="datetime-local" id="remindInput" />
-      <button class="add-btn" onclick="addTask()">Добавить</button>
-    </div>
+  <div class="box">
+    <input type="text" id="taskInput" placeholder="Что нужно сделать?" />
+    <label style="font-size: 12px; color: var(--hint);">Время напоминания (Telegram пришлёт пуш):</label>
+    <input type="datetime-local" id="remindInput" />
+    <button class="btn-add" onclick="addTask()">Добавить задачу</button>
   </div>
 
-  <div id="tasks" class="task-list"></div>
+  <div id="tasks" class="list"></div>
 
   <script>
     const tg = window.Telegram.WebApp;
@@ -139,58 +110,53 @@ HTML_PAGE = """<!DOCTYPE html>
     async function loadTasks() {
       try {
         const res = await fetch(`/api/tasks?userId=${userId}`);
-        const tasks = await res.json();
-        renderTasks(tasks);
-      } catch (e) {
-        console.error(e);
-      }
+        const data = await res.json();
+        render(data);
+      } catch (e) { console.error(e); }
     }
 
-    function renderTasks(tasks) {
-      const container = document.getElementById("tasks");
-      container.innerHTML = "";
+    function render(tasks) {
+      const c = document.getElementById("tasks");
+      c.innerHTML = "";
       if (!tasks || tasks.length === 0) {
-        container.innerHTML = '<div style="color: var(--hint); text-align: center; margin-top: 20px;">Нет задач 🎉</div>';
+        c.innerHTML = '<div style="text-align:center; color:var(--hint); padding:20px;">Нет активных задач 🎉</div>';
         return;
       }
-      tasks.forEach(task => {
+      tasks.forEach(t => {
         const el = document.createElement("div");
-        el.className = `task-item ${task.done ? 'done' : ''}`;
-        
-        let remindInfo = "";
-        if (task.remind_at) {
-          const d = new Date(task.remind_at);
-          remindInfo = `<span class="remind-tag">🔔 ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>`;
+        el.className = "item " + (t.done ? "done" : "");
+        let badge = "";
+        if (t.remind_at) {
+          const d = new Date(t.remind_at);
+          badge = `<div class="time-badge">⏰ Напоминание: ${d.toLocaleDateString()} в ${d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>`;
         }
-
         el.innerHTML = `
-          <div class="task-left" onclick="toggleTask(${task.id})">
-            <span>${task.done ? '✅' : '⬜'}</span>
-            <div class="task-content">
-              <span class="title">${task.title}</span>
-              ${remindInfo}
+          <div class="left" onclick="toggleTask(${t.id})">
+            <span>${t.done ? '✅' : '⬜'}</span>
+            <div>
+              <div class="title">${t.title}</div>
+              ${badge}
             </div>
           </div>
-          <button class="del-btn" onclick="deleteTask(${task.id})">✕</button>
+          <button class="del" onclick="deleteTask(${t.id})">✕</button>
         `;
-        container.appendChild(el);
+        c.appendChild(el);
       });
     }
 
     async function addTask() {
       const inp = document.getElementById("taskInput");
-      const remindInp = document.getElementById("remindInput");
+      const remind = document.getElementById("remindInput").value;
       const title = inp.value.trim();
-      const remind_at = remindInp.value;
       if (!title) return;
 
       await fetch('/api/add', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ userId, title, remind_at })
+        body: JSON.stringify({ userId, title, remind_at: remind || null })
       });
       inp.value = "";
-      remindInp.value = "";
+      document.getElementById("remindInput").value = "";
       loadTasks();
     }
 
@@ -218,7 +184,7 @@ HTML_PAGE = """<!DOCTYPE html>
 </html>
 """
 
-# --- Работа со структурой tasks.json ---
+# --- База данных tasks.json ---
 
 def load_all_tasks():
     if not TASKS_FILE.exists():
@@ -226,8 +192,6 @@ def load_all_tasks():
     try:
         with open(TASKS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, list):
-                return {"default": data}
             return data if isinstance(data, dict) else {}
     except Exception:
         return {}
@@ -239,48 +203,45 @@ def save_all_tasks(data):
     except Exception as e:
         print(f"Ошибка сохранения: {e}")
 
-def get_user_tasks(user_id):
-    data = load_all_tasks()
-    return data.get(str(user_id), [])
+def get_user_tasks(uid):
+    return load_all_tasks().get(str(uid), [])
 
-def add_user_task(user_id, title, remind_at=None):
+def add_user_task(uid, title, remind_at=None):
     data = load_all_tasks()
-    uid = str(user_id)
-    user_tasks = data.get(uid, [])
-    new_id = max([t.get("id", 0) for t in user_tasks], default=0) + 1
-    user_tasks.append({
+    u = str(uid)
+    tasks = data.get(u, [])
+    new_id = max([t.get("id", 0) for t in tasks], default=0) + 1
+    tasks.append({
         "id": new_id,
-        "title": str(title).strip(),
+        "title": title.strip(),
         "done": False,
-        "remind_at": remind_at if remind_at else None
+        "remind_at": remind_at
     })
-    data[uid] = user_tasks
+    data[u] = tasks
     save_all_tasks(data)
     return new_id
 
-def toggle_user_task(user_id, task_id):
+def toggle_user_task(uid, tid):
     data = load_all_tasks()
-    uid = str(user_id)
-    user_tasks = data.get(uid, [])
-    for t in user_tasks:
-        if t.get("id") == task_id:
+    for t in data.get(str(uid), []):
+        if t.get("id") == tid:
             t["done"] = not t.get("done", False)
             save_all_tasks(data)
             return True
     return False
 
-def delete_user_task(user_id, task_id):
+def delete_user_task(uid, tid):
     data = load_all_tasks()
-    uid = str(user_id)
-    user_tasks = data.get(uid, [])
-    filtered = [t for t in user_tasks if t.get("id") != task_id]
-    if len(filtered) < len(user_tasks):
-        data[uid] = filtered
+    u = str(uid)
+    tasks = data.get(u, [])
+    filtered = [t for t in tasks if t.get("id") != tid]
+    if len(filtered) < len(tasks):
+        data[u] = filtered
         save_all_tasks(data)
         return True
     return False
 
-# --- Фоновый планировщик напоминаний ---
+# --- Пуш-напоминания по времени ---
 
 def notification_worker():
     while True:
@@ -293,37 +254,35 @@ def notification_worker():
                 if uid == "default":
                     continue
                 for task in tasks:
-                    remind_at_str = task.get("remind_at")
-                    if remind_at_str and not task.get("done"):
+                    remind_str = task.get("remind_at")
+                    if remind_str and not task.get("done"):
                         try:
-                            remind_time = datetime.fromisoformat(remind_at_str)
+                            remind_time = datetime.fromisoformat(remind_str)
                             if now >= remind_time:
                                 bot.send_message(
                                     int(uid),
-                                    f"⏰ **Напоминание о задаче!**\n\n📌 {task.get('title')}",
+                                    f"⏰ **Напоминание о задаче!**\n\n📌 {task.get('title')}\n\nСделайте её или отметьте выполненной в приложении!",
                                     parse_mode="Markdown"
                                 )
                                 task["remind_at"] = None
                                 modified = True
-                        except Exception as err:
-                            print(f"Ошибка даты: {err}")
-
+                        except Exception as e:
+                            print(f"Ошибка даты: {e}")
             if modified:
                 save_all_tasks(data)
         except Exception as e:
-            print(f"Ошибка воркера: {e}")
+            print(f"Ошибка в воркере: {e}")
+        time.sleep(20)
 
-        time.sleep(25)
-
-# --- HTTP Сервер Mini App ---
+# --- Веб-сервер Mini App ---
 
 class MiniAppServer(BaseHTTPRequestHandler):
-    def _send_json(self, data):
+    def _send_json(self, d):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        self.wfile.write(json.dumps(d).encode("utf-8"))
 
     def do_HEAD(self):
         self.send_response(200)
@@ -339,17 +298,15 @@ class MiniAppServer(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        path = parsed.path
-
-        if path in ("/", "/index.html"):
+        if parsed.path in ("/", "/index.html"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode("utf-8"))
-        elif path == "/api/tasks":
+        elif parsed.path == "/api/tasks":
             qs = parse_qs(parsed.query)
-            user_id = qs.get("userId", ["default"])[0]
-            self._send_json(get_user_tasks(user_id))
+            uid = qs.get("userId", ["default"])[0]
+            self._send_json(get_user_tasks(uid))
         else:
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -358,20 +315,20 @@ class MiniAppServer(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length)
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
         payload = json.loads(body.decode("utf-8")) if body else {}
-        user_id = payload.get("userId", "default")
+        uid = payload.get("userId", "default")
 
         if parsed.path == "/api/add":
-            new_id = add_user_task(user_id, payload.get("title", ""), payload.get("remind_at"))
-            self._send_json({"success": True, "id": new_id})
+            nid = add_user_task(uid, payload.get("title", ""), payload.get("remind_at"))
+            self._send_json({"success": True, "id": nid})
         elif parsed.path == "/api/toggle":
-            success = toggle_user_task(user_id, int(payload.get("id")))
-            self._send_json({"success": success})
+            res = toggle_user_task(uid, int(payload.get("id")))
+            self._send_json({"success": res})
         elif parsed.path == "/api/delete":
-            success = delete_user_task(user_id, int(payload.get("id")))
-            self._send_json({"success": success})
+            res = delete_user_task(uid, int(payload.get("id")))
+            self._send_json({"success": res})
         else:
             self.send_response(404)
             self.end_headers()
@@ -381,52 +338,47 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), MiniAppServer)
     server.serve_forever()
 
-# --- Telegram Bot Handler ---
+# --- Бот ---
 
-@bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
+@bot.message_handler(commands=['start'])
+def welcome(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(WEBAPP_URL)))
-    markup.add(types.KeyboardButton("📋 Список задач"))
-
+    markup.add(types.KeyboardButton("📋 Показать список задач"))
     bot.send_message(
         message.chat.id,
-        "👋 Планировщик готов к работе!\nНажмите кнопку ниже, чтобы открыть список задач:",
-        reply_markup=markup
+        "Привет! Я твой планировщик задач с напоминаниями.\n\nНажми кнопку **«🚀 Открыть Планировщик»** ниже, чтобы добавить задачи со временем:",
+        reply_markup=markup,
+        parse_mode="Markdown"
     )
 
-@bot.message_handler(func=lambda msg: msg.text == "📋 Список задач")
-def show_tasks(message):
+@bot.message_handler(func=lambda m: m.text == "📋 Показать список задач")
+def send_tasks(message):
     tasks = get_user_tasks(message.from_user.id)
     if not tasks:
-        bot.send_message(message.chat.id, "Список пуст 📭")
+        bot.send_message(message.chat.id, "Список задач пуст! 🎉")
         return
-    text = "📋 **Ваши задачи:**\n\n"
+    text = "📋 **Твои задачи:**\n\n"
     for t in tasks:
         icon = "✅" if t.get("done") else "⬜"
-        remind = f" (🔔 {t['remind_at']})" if t.get("remind_at") else ""
+        remind = f" (⏰ {t['remind_at']})" if t.get("remind_at") else ""
         text += f"{icon} `#{t['id']}` {t['title']}{remind}\n"
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 if __name__ == "__main__":
-    # Запуск веб-сервера для Mini App
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-
-    # Запуск фонового планировщика напоминаний
-    notify_thread = threading.Thread(target=notification_worker, daemon=True)
-    notify_thread.start()
-
-    print("HTTP-сервер и воркер напоминаний запущены...")
-
-    # Даем старому контейнеру Render 5 секунд на отключение
-    time.sleep(5)
+    threading.Thread(target=run_server, daemon=True).start()
+    threading.Thread(target=notification_worker, daemon=True).start()
+    
+    # Защищенный запуск бота
+    time.sleep(3)
+    try:
+        bot.remove_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
 
     while True:
         try:
-            bot.remove_webhook(drop_pending_updates=True)
-            print("Telegram Webhook сброшен, начинаем polling...")
-            bot.infinity_polling(timeout=20, long_polling_timeout=15)
+            bot.polling(none_stop=True, interval=1, timeout=30)
         except Exception as e:
-            print(f"Ошибка polling (повтор через 5 сек): {e}")
-            time.sleep(5)
+            print(f"Polling reconnect: {e}")
+            time.sleep(4)

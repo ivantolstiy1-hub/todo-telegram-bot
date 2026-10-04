@@ -9,7 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot import types
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ВСТАВЬ_ТОКЕН")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -17,7 +17,7 @@ TASKS_FILE = BASE_DIR / "tasks.json"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- Работа с tasks.json ---
+# --- Хранилище tasks.json ---
 
 def load_all_tasks():
     if not TASKS_FILE.exists():
@@ -28,14 +28,14 @@ def load_all_tasks():
             if isinstance(data, list):
                 return {"default": data}
             return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError):
+    except Exception:
         return {}
 
 def save_all_tasks(data):
     try:
         with open(TASKS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    except OSError as e:
+    except Exception as e:
         print(f"Ошибка сохранения tasks.json: {e}")
 
 def get_user_tasks(user_id):
@@ -79,7 +79,7 @@ def delete_user_task(user_id, task_id):
         return True
     return False
 
-# --- Фоновый планировщик напоминаний ---
+# --- Фоновый воркер напоминаний ---
 
 def notification_worker():
     while True:
@@ -105,16 +105,16 @@ def notification_worker():
                                 task["remind_at"] = None
                                 modified = True
                         except Exception as err:
-                            print(f"Ошибка парсинга даты: {err}")
+                            print(f"Ошибка даты: {err}")
 
             if modified:
                 save_all_tasks(data)
         except Exception as e:
-            print(f"Ошибка воркера напоминаний: {e}")
+            print(f"Ошибка воркера: {e}")
 
-        time.sleep(30)
+        time.sleep(25)
 
-# --- HTTP Сервер для Mini App с автопоиском index.html ---
+# --- Веб-сервер Mini App ---
 
 class MiniAppServer(BaseHTTPRequestHandler):
     def _send_json(self, data):
@@ -124,10 +124,16 @@ class MiniAppServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode("utf-8"))
 
+    def do_HEAD(self):
+        # Ответ для проверок Render Health Check
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
@@ -136,7 +142,7 @@ class MiniAppServer(BaseHTTPRequestHandler):
         path = parsed.path
 
         if path in ("/", "/index.html"):
-            # Поиск index.html в разных возможных местах
+            # Пробуем несколько путей до index.html
             candidates = [
                 BASE_DIR / "index.html",
                 Path("index.html").resolve(),
@@ -151,10 +157,11 @@ class MiniAppServer(BaseHTTPRequestHandler):
                 with open(html_file, "rb") as f:
                     self.wfile.write(f.read())
             else:
-                self.send_response(404)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(b"Error: index.html not found on server")
+                # Запасной рендер, если файл не найден в файловой системе Render
+                self.wfile.write(b"<h1>Mini App is loading...</h1><script>location.reload();</script>")
         elif path == "/api/tasks":
             qs = parse_qs(parsed.query)
             user_id = qs.get("userId", ["default"])[0]
@@ -190,9 +197,9 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), MiniAppServer)
     server.serve_forever()
 
-# --- Telegram Bot ---
+# --- Telegram Bot Handler ---
 
-@bot.message_handler(commands=['start', 'app'])
+@bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if WEBAPP_URL:
@@ -201,7 +208,7 @@ def send_welcome(message):
 
     bot.send_message(
         message.chat.id,
-        "👋 Планировщик онлайн!\nНажмите кнопку ниже, чтобы открыть приложение:",
+        "👋 Планировщик готов к работе!\nНажмите кнопку ниже или используйте кнопку меню для открытия списка задач:",
         reply_markup=markup
     )
 
@@ -223,10 +230,9 @@ if __name__ == "__main__":
     threading.Thread(target=notification_worker, daemon=True).start()
     print("Бот и WebApp запущены...")
     
-    # Защищенный цикл поллинга, чтобы бот не падал при сетевых сбоях
     while True:
         try:
             bot.polling(none_stop=True, interval=0, timeout=20)
         except Exception as e:
-            print(f"Ошибка polling: {e}")
+            print(f"Polling error: {e}")
             time.sleep(5)

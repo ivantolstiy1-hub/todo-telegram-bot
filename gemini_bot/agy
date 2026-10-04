@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""
+Antigravity CLI (agy) - Lightweight terminal interface for Antigravity AI Agent.
+"""
+
+import sys
+import os
+import argparse
+import time
+from pathlib import Path
+
+# Добавляем путь к gemini_bot в sys.path для импорта сервисов
+CURRENT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CURRENT_DIR))
+
+from services.antigravity_service import antigravity_service
+
+# ANSI цвета для красивого терминального вывода
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+def print_banner():
+    print(f"{CYAN}{BOLD}⚡ Antigravity CLI (agy){RESET} — Google Agentic AI Terminal")
+    print("-" * 55)
+
+def run_oneshot(prompt: str, model: str):
+    print(f"\n{YELLOW}🚀 Запуск агента Antigravity [{model}]...{RESET}")
+    
+    def on_progress(action: str):
+        clean_action = action.replace("*", "")
+        print(f"{CYAN}  ↳ {clean_action}{RESET}")
+
+    try:
+        conv_id, reply = antigravity_service.create_conversation(prompt, model=model)
+        print(f"\n{GREEN}{BOLD}Ответ Antigravity:{RESET}\n")
+        print(reply)
+        print(f"\n{YELLOW}ID сессии:{RESET} {conv_id}\n")
+    except Exception as e:
+        print(f"\n❌ Ошибка: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def run_interactive(model: str):
+    print_banner()
+    print(f"{GREEN}Интерактивный режим активирован.{RESET} Модель: {BOLD}{model}{RESET}")
+    print("Для выхода нажмите Ctrl+C или введите /exit\n")
+
+    initial_prompt = "Привет! Я запускаю интерактивную сессию в терминале."
+    print(f"{YELLOW}Инициализация агента...{RESET}")
+    try:
+        conv_id, reply = antigravity_service.create_conversation(initial_prompt, model=model)
+        print(f"{GREEN}Агент готов!{RESET} ID: {conv_id[:8]}...\n")
+    except Exception as e:
+        print(f"❌ Ошибка инициализации: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    def on_progress(action: str):
+        clean_action = action.replace("*", "")
+        print(f"{CYAN}  ↳ {clean_action}{RESET}")
+
+    while True:
+        try:
+            user_input = input(f"{BOLD}agy > {RESET}").strip()
+            if not user_input:
+                continue
+            if user_input in ("/exit", "/quit", "exit", "quit"):
+                print("👋 Завершение сессии.")
+                break
+
+            print(f"{YELLOW}Думаю...{RESET}")
+            reply = antigravity_service.send_message(conv_id, user_input, on_progress=on_progress)
+            print(f"\n{GREEN}{BOLD}Antigravity:{RESET}\n{reply}\n")
+        except (KeyboardInterrupt, EOFError):
+            print("\n👋 Завершение работы.")
+            break
+        except Exception as e:
+            print(f"⚠️ Ошибка: {e}\n")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Antigravity CLI (agy) — интерфейс командной строки для агента Antigravity",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Примеры использования:
+  agy "Напиши скрипт для парсинга HTML на Python"
+  agy -m pro "Сделай рефакторинг main.py"
+  agy -i   (запустить интерактивный диалог)
+        """
+    )
+    parser.add_argument("prompt", nargs="*", help="Запрос или задача для выполнения агентом")
+    parser.add_argument("-m", "--model", choices=["flash", "flash_lite", "pro"], default="flash", help="Модель (по умолчанию: flash)")
+    parser.add_argument("-i", "--interactive", action="store_true", help="Запустить интерактивную сессию в консоли")
+
+    args = parser.parse_args()
+
+    if not antigravity_service.is_available():
+        print(f"❌ Ошибка: бинарник agentapi не найден по пути {antigravity_service.agentapi_bin}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.interactive or not args.prompt:
+        run_interactive(args.model)
+    else:
+        prompt_text = " ".join(args.prompt)
+        run_oneshot(prompt_text, args.model)
+
+if __name__ == "__main__":
+    main()

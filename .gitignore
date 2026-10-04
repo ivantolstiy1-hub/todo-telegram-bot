@@ -1,2 +1,13 @@
 .DS_Store
 *.app/
+.env
+*.env
+*.db
+*.sqlite3
+__pycache__/
+*.pyc
+venv/
+gemini_bot/venv/
+gemini_bot/.env
+gemini_bot/*.db
+gemini_bot/bot_memory.db

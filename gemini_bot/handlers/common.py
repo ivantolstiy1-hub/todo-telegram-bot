@@ -10,23 +10,45 @@ from services.database import (
     get_user_antigravity_conv,
 )
 from services.antigravity_service import antigravity_service
+from services.hermes_service import hermes_service
 from services.self_config_service import self_config_service, STYLE_DESCRIPTIONS
 from handlers.admin import is_admin
 from utils.helpers import safe_send_message
 
 def get_models_keyboard(current_model: str) -> types.InlineKeyboardMarkup:
     markup = types.InlineKeyboardMarkup(row_width=1)
+    pstats = hermes_service.get_providers_status()
+    
     for model_id, model_name in AVAILABLE_MODELS.items():
         is_active = (model_id == current_model)
-        btn_text = f"✅ {model_name}" if is_active else model_name
+        
+        # Индикатор готовности провайдера
+        if model_id == "auto-hermes":
+            indicator = "✨"
+        elif model_id.startswith("gemini-"):
+            indicator = "🟢" if pstats["gemini"]["configured"] else "🔴"
+        elif model_id.startswith("deepseek-"):
+            indicator = "🟢" if (pstats["deepseek"]["configured"] or pstats["openrouter"]["configured"]) else "🔑"
+        elif model_id.startswith("claude-"):
+            indicator = "🟢" if (pstats["claude"]["configured"] or pstats["openrouter"]["configured"]) else "🔑"
+        elif model_id == "gpt-4o":
+            indicator = "🟢" if (pstats["openai"]["configured"] or pstats["openrouter"]["configured"]) else "🔑"
+        elif model_id == "nous-hermes-3":
+            indicator = "🟢" if pstats["openrouter"]["configured"] else "🔑"
+        else:
+            indicator = "🟢"
+
+        label = f"{indicator} {model_name}"
+        btn_text = f"✅ {label}" if is_active else label
         markup.add(types.InlineKeyboardButton(text=btn_text, callback_data=f"setmodel:{model_id}"))
     return markup
 
 def get_modes_keyboard(current_mode: str) -> types.InlineKeyboardMarkup:
     markup = types.InlineKeyboardMarkup(row_width=1)
     modes = {
+        "hermes": "🏛 Агент Гермес (Мульти-LLM маршрутизатор)",
         "agent": "🤖 Antigravity Agent (CLI & Инструменты)",
-        "direct": "⚡ Gemini Direct (Быстрый чат)"
+        "direct": "⚡ Gemini Direct (Прямой чат Google)"
     }
     for mode_id, mode_title in modes.items():
         is_active = (mode_id == current_mode)
@@ -41,23 +63,34 @@ def register_common_handlers(bot: TeleBot):
         user_name = message.from_user.first_name or "друг"
         user_id = message.from_user.id
         mode = get_user_engine_mode(user_id)
-        mode_label = "🤖 Antigravity Agent" if mode == "agent" else "⚡ Gemini Direct"
+        mode_labels = {
+            "hermes": "🏛 Агент Гермес (Мульти-LLM)",
+            "agent": "🤖 Antigravity Agent (CLI)",
+            "direct": "⚡ Gemini Direct (API)"
+        }
+        mode_label = mode_labels.get(mode, "🏛 Агент Гермес")
 
         text = (
-            f"👋 *Привет, {user_name}!* Я персональный AI-ассистент на базе *Google Antigravity CLI* и *Gemini*.\n\n"
+            f"👋 *Привет, {user_name}!* Я персональный AI-ассистент на базе *Агента Гермес*, *Google Gemini* и *Antigravity CLI*.\n\n"
             f"⚙️ *Текущий режим:* `{mode_label}`\n\n"
             "✨ *Что я умею:*\n"
-            "• 🤖 *Автономный агент (Antigravity CLI)* — могу работать с вашим проектом, читать файлы, писать код и запускать команды прямо из Telegram.\n"
-            "• 🧠 *Полноценная память* — удерживаю контекст диалога и детали задач.\n"
-            "• 📸 *Фото и скриншоты* — анализирую графики, код с экрана и решаю задачи.\n"
-            "• 🎙 *Голосовые сообщения* — понимаю речь и отвечаю текстом.\n"
+            "• 🏛 *Агент Гермес (Мульти-LLM)* — умный диспетчер нейросетей! Автоматически направляет математику в DeepSeek R1, сложный код в Claude 3.5, творчество в Nous Hermes / ChatGPT, а быстрые ответы — в Gemini 3.5 Flash.\n"
+            "• 🤖 *Antigravity Agent (CLI)* — работа с проектом, чтение файлов, запуск команд прямо из Telegram.\n"
+            "• 🧠 *Единая память диалога* — контекст сохраняется при переключении между любыми нейросетями.\n"
+            "• 📸 *Фото и скриншоты* — анализ графиков, диаграмм, кода с экрана.\n"
+            "• 🎙 *Голосовые сообщения* — понимаю речь и выполняю голосовые поручения.\n"
             "• 📄 *Документы* — разбираю `.py`, `.txt`, `.pdf` файлы.\n\n"
             "⚡ *Команды управления:*\n"
-            "/mode — Переключить режим (Antigravity Agent / Gemini Direct)\n"
-            "/reset или /new — Очистить память диалога и начать с чистого листа\n"
-            "/model — Выбрать модель нейросети\n"
-            "/status — Текущий статус памяти, режима и сессии\n"
+            "/mode — Режим работы (Гермес / Antigravity CLI / Gemini Direct)\n"
+            "/model — Выбрать модель (Auto-Hermes, DeepSeek, Claude, ChatGPT, Gemini)\n"
+            "/status — Текущий статус памяти, ключей и провайдеров\n"
+            "/reset или /new — Очистить память и начать заново\n"
+            "/config — Интерактивная самонастройка стиля и температуры\n"
             "/help — Справка и примеры\n\n"
+            "💡 *Быстрые фразы Гермеса:* можно написать прямо в чат:\n"
+            "_«Гермес, спроси у DeepSeek: реши задачу...»_\n"
+            "_«через Claude: напиши скрипт...»_\n"
+            "_«Гермес, сочини стих»_\n\n"
             "Отправь мне задачу или вопрос прямо сейчас! 👇"
         )
         if is_admin(user_id):
@@ -71,8 +104,9 @@ def register_common_handlers(bot: TeleBot):
         kb = get_modes_keyboard(current_mode)
         text = (
             "🛠 *Выберите режим работы ассистента:*\n\n"
-            "• 🤖 *Antigravity Agent (CLI)* — полноценный агент с доступом к коду, инструментам терминала, многошаговому рассуждению и решению сложных задач.\n"
-            "• ⚡ *Gemini Direct* — сверхбыстрый прямой чат через Google Gemini API для простых вопросов и генерации текстов."
+            "• 🏛 *Агент Гермес (Мульти-LLM)* — интеллектуальный маршрутизатор: автоматически выбирает лучшую модель (DeepSeek, Claude, ChatGPT, Gemini) под сложность вопроса или слушает команды «Гермес, спроси у...».\n"
+            "• 🤖 *Antigravity Agent (CLI)* — автономный агент с терминалом и доступом к файловой системе для задач кодинга.\n"
+            "• ⚡ *Gemini Direct* — сверхбыстрый прямой чат через Google Gemini API."
         )
         safe_send_message(bot, message.chat.id, text, reply_markup=kb)
 
@@ -81,10 +115,15 @@ def register_common_handlers(bot: TeleBot):
         user_id = call.from_user.id
         new_mode = call.data.split(":", 1)[1]
         
-        if new_mode in ("agent", "direct"):
+        mode_names = {
+            "hermes": "🏛 Агент Гермес (Мульти-LLM)",
+            "agent": "🤖 Antigravity Agent (CLI)",
+            "direct": "⚡ Gemini Direct (API)"
+        }
+        if new_mode in mode_names:
             set_user_engine_mode(user_id, new_mode)
             kb = get_modes_keyboard(new_mode)
-            mode_name = "🤖 Antigravity Agent (CLI)" if new_mode == "agent" else "⚡ Gemini Direct (API)"
+            mode_name = mode_names[new_mode]
             
             try:
                 bot.edit_message_text(
@@ -115,8 +154,12 @@ def register_common_handlers(bot: TeleBot):
         current_model = get_user_model(user_id)
         kb = get_models_keyboard(current_model)
         text = (
-            "⚙️ *Выбор модели:* \n\n"
+            "⚙️ *Выбор модели нейросети:*\n\n"
             f"Текущая модель: `{current_model}`\n\n"
+            "📌 *Обозначения:*\n"
+            "✨ — Умный Агент Гермес (сам подберет лучшую LLM под ваш вопрос)\n"
+            "🟢 — Провайдер подключен и готов к работе\n"
+            "🔑 — Требуется API-ключ (при выборе включится каскадный резерв на Gemini)\n\n"
             "Выберите подходящую модель для решения ваших задач:"
         )
         safe_send_message(bot, message.chat.id, text, reply_markup=kb)
@@ -153,8 +196,13 @@ def register_common_handlers(bot: TeleBot):
         conv_id = get_user_antigravity_conv(user_id)
         msg_count = count_messages(user_id)
         
-        mode_label = "🤖 Antigravity Agent (CLI)" if mode == "agent" else "⚡ Gemini Direct"
-        agent_status = f"`{conv_id[:12]}...`" if conv_id else "_Не активна (будет создана при первом запросе)_"
+        mode_labels = {
+            "hermes": "🏛 Агент Гермес (Мульти-LLM)",
+            "agent": "🤖 Antigravity Agent (CLI)",
+            "direct": "⚡ Gemini Direct"
+        }
+        mode_label = mode_labels.get(mode, mode)
+        agent_status = f"`{conv_id[:12]}...`" if conv_id else "_Не активна (создается при запросе к агенту)_"
 
         role_label = "👑 Администратор" if is_admin(user_id) else "👤 Пользователь"
         
@@ -162,13 +210,21 @@ def register_common_handlers(bot: TeleBot):
         kstats = gemini_service.key_pool.get_stats()
         keys_label = f"`{kstats['active']}/{kstats['total']} активны`"
 
+        pstats = hermes_service.get_providers_status()
+        prov_items = []
+        for p_key, p_data in pstats.items():
+            icon = "🟢" if p_data["configured"] else "⚪"
+            prov_items.append(f"{icon} {p_data['name']}")
+        providers_status_str = " | ".join(prov_items)
+
         text = (
             "📊 *Текущий статус ассистента:*\n\n"
             f"• 🔑 *Ваш статус:* `{role_label}`\n"
             f"• 🛠 *Режим работы:* `{mode_label}`\n"
             f"• 🤖 *Активная модель:* `{current_model}`\n"
             f"• 🧠 *Сообщений в памяти:* `{msg_count}`\n"
-            f"• 🔑 *Пул API-ключей:* {keys_label}\n"
+            f"• ⚡ *Ключи Gemini:* {keys_label}\n"
+            f"• 🏛 *Провайдеры LLM:* {providers_status_str}\n"
             f"• 🆔 *Сессия Antigravity:* {agent_status}\n\n"
             "Используйте /mode для смены режима или /reset для сброса контекста."
         )
@@ -177,14 +233,17 @@ def register_common_handlers(bot: TeleBot):
     @bot.message_handler(commands=["help"])
     def cmd_help(message: types.Message):
         text = (
-            "📖 *Справочник по боту Antigravity & Gemini:*\n\n"
-            "1. *Режим Antigravity Agent:* идеален для программирования, работы с проектом, исследования файлов и выполнения сложных задач через CLI.\n"
-            "2. *Режим Gemini Direct:* быстрые ответы на вопросы без вызова инструментов.\n"
-            "3. *Автономная самонастройка:* говорите боту «Настрой себя так, чтобы...», «Добавь правило: ...», «Поменяй температуру на 0.2» или используйте /config.\n"
-            "4. *Безлимитный режим запросов:* бот автоматически балансирует нагрузку между пулом ключей и каскадом моделей, предотвращая ошибку 429.\n"
-            "5. *Команда /mode:* переключение между режимами агента и прямого чата.\n"
-            "6. *Команда /reset:* очищает память и начинает новую сессию с чистого листа.\n"
-            "7. *Медиа (фото, голос, файлы):* отправляйте голосовые сообщения, фото задач или файлы кода прямо в чат — бот обработает их автоматически."
+            "📖 *Справочник по боту Antigravity & Агент Гермес:*\n\n"
+            "1. 🏛 *Агент Гермес (Мульти-LLM):* умная маршрутизация между DeepSeek, Claude, ChatGPT, Gemini и Nous Hermes. Говорите естественными фразами:\n"
+            "   • _«Гермес, спроси у DeepSeek: реши теорему...»_\n"
+            "   • _«через Claude: найди баг в коде...»_\n"
+            "   • _«через ChatGPT: придумай слоган...»_\n"
+            "   • _«Гермес, ...»_ — автовыбор лучшей модели.\n"
+            "2. 🤖 *Режим Antigravity Agent:* решение задач в терминале, работа с репозиторием и файлами.\n"
+            "3. ⚡ *Режим Gemini Direct:* сверхбыстрый чат через прямой API Google.\n"
+            "4. 🛠 *Автономная самонастройка:* бот меняет температуру, стиль и правила по фразам «Настрой себя так...» или через /config.\n"
+            "5. 🔄 *Авто-каскад и отказоустойчивость:* при отсутствии ключей сторонних LLM Гермес автоматически перенаправляет запрос на Gemini без ошибок для пользователя.\n"
+            "6. 🎙 *Медиа (фото, голос, файлы):* отправляйте голосовые сообщения, фото или код — бот поймет и ответит."
         )
         safe_send_message(bot, message.chat.id, text)
 

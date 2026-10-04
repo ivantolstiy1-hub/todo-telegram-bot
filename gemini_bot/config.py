@@ -32,7 +32,13 @@ for k in raw_keys.replace(";", ",").replace("\n", ",").split(","):
 # Основной ключ для совместимости
 GEMINI_API_KEY = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ""
 
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gemini-3.8-flash").strip()
+# Multi-LLM API Keys (Агент Гермес: OpenRouter, DeepSeek, OpenAI, Anthropic)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "auto-hermes").strip()
 ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "8173946372,8562721499")
 ADMIN_IDS = set()
 for item in ADMIN_IDS_RAW.split(","):
@@ -44,7 +50,7 @@ ADMIN_IDS.add(ADMIN_ID)
 DEFAULT_AGENT_ACCESS = os.getenv("AGENT_ACCESS_MODE", "admin_only").strip()  # "admin_only" или "all"
 SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
-    "Ты — умный, эрудированный и дружелюбный персональный AI-ассистент в Telegram на базе Google Gemini. "
+    "Ты — умный, эрудированный и дружелюбный персональный AI-ассистент в Telegram на базе Google Gemini и Агента Гермес. "
     "Твоя задача — оперативно, точно и понятно помогать пользователю в решении любых задач: в коде, учебе, работе, "
     "анализе текстов и генерации идей. Отвечай на языке собеседника, сохраняй нить диалога и используй красивое форматирование."
 ).strip()
@@ -55,10 +61,15 @@ MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "16"))
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "35000"))
 
 AVAILABLE_MODELS = {
-    "gemini-3.5-flash": "⚡ Gemini 3.5 Flash (Стабильная, высокая квота)",
+    "auto-hermes": "🤖 Агент Гермес (Умный авто-маршрутизатор)",
+    "gemini-3.5-flash": "⚡ Gemini 3.5 Flash (Google AI)",
+    "gemini-3.1-pro-preview": "🧠 Gemini 3.1 Pro (Флагман Google)",
+    "deepseek-reasoner": "🧮 DeepSeek R1 (Логика и рассуждения)",
+    "deepseek-chat": "🐋 DeepSeek V3 (Быстрый интеллект)",
+    "claude-3-5-sonnet": "🎭 Claude 3.5 Sonnet (Архитектура и код)",
+    "gpt-4o": "🟢 ChatGPT GPT-4o (OpenAI)",
+    "nous-hermes-3": "🦙 Nous Hermes 3 (OpenRouter)",
     "gemini-3.5-flash-lite": "🚀 Gemini 3.5 Flash-Lite (Сверхбыстрая)",
-    "gemini-3.1-flash-lite": "💡 Gemini 3.1 Flash-Lite (Экономная)",
-    "gemini-3.1-pro-preview": "🧠 Gemini 3.1 Pro (Флагман Pro)",
     "gemini-3.8-flash": "🔥 Gemini 3.8 Flash (Превью модель)",
 }
 

@@ -44,10 +44,24 @@
   <main class="app-content">
     <!-- 1. TAB: CHAT -->
     <section id="tab-chat" class="tab-pane active">
+      <div class="chat-model-bar">
+        <span class="chat-model-label">🤖 Модель:</span>
+        <select id="chatModelSelect" class="chat-model-select">
+          <option value="auto-hermes">✨ Агент Гермес (Автовыбор)</option>
+          <option value="gemini-3.5-flash">⚡ Gemini 3.5 Flash</option>
+          <option value="gemini-3.1-pro-preview">🧠 Gemini 3.1 Pro</option>
+          <option value="deepseek-reasoner">🧮 DeepSeek R1 (Логика)</option>
+          <option value="deepseek-chat">🐋 DeepSeek V3 (Чат)</option>
+          <option value="claude-3-5-sonnet">🎭 Claude 3.5 Sonnet (Код)</option>
+          <option value="gpt-4o">🟢 ChatGPT (GPT-4o)</option>
+          <option value="nous-hermes-3">🦙 Nous Hermes 3</option>
+        </select>
+      </div>
       <div id="chatMessages" class="chat-messages">
         <div class="message-bubble bot">
-          👋 <strong>Привет!</strong> Я ваш персональный AI-ассистент на базе Google Gemini и Antigravity.<br><br>
-          Чем я могу помочь вам прямо сейчас? Задайте вопрос по коду, тексту или задаче! 👇
+          👋 <strong>Привет!</strong> Я ваш персональный AI-ассистент на базе <strong>Агента Гермес</strong>, Google Gemini и Antigravity.<br><br>
+          Я умею автоматически маршрутизировать задачи между нейросетями (DeepSeek R1 для логики, Claude 3.5 для кода, ChatGPT/Hermes для текстов, Gemini для скорости).<br><br>
+          Задайте вопрос или поручите задачу прямо сейчас! 👇
         </div>
       </div>
     </section>

@@ -142,6 +142,40 @@ class PWAAndApiHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"tasks": tasks})
             return
 
+        # 4. API: Список моделей и провайдеров Агента Гермес
+        if path == "/api/models":
+            try:
+                from config import AVAILABLE_MODELS
+                from services.hermes_service import hermes_service
+                from services.database import get_user_model
+                pstats = hermes_service.get_providers_status()
+                models_list = []
+                for mid, mname in AVAILABLE_MODELS.items():
+                    configured = True
+                    if mid.startswith("deepseek-"):
+                        configured = bool(pstats["deepseek"]["configured"] or pstats["openrouter"]["configured"])
+                    elif mid.startswith("claude-"):
+                        configured = bool(pstats["claude"]["configured"] or pstats["openrouter"]["configured"])
+                    elif mid == "gpt-4o":
+                        configured = bool(pstats["openai"]["configured"] or pstats["openrouter"]["configured"])
+                    elif mid == "nous-hermes-3":
+                        configured = bool(pstats["openrouter"]["configured"])
+                    elif mid.startswith("gemini-"):
+                        configured = bool(pstats["gemini"]["configured"])
+                    models_list.append({
+                        "id": mid,
+                        "name": mname,
+                        "configured": configured
+                    })
+                self._send_json(200, {
+                    "models": models_list,
+                    "providers": pstats,
+                    "current_model": get_user_model(1)
+                })
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+            return
+
         # 4. PWA: Web App Manifest
         if path == "/manifest.json":
             self._serve_file(STATIC_DIR / "manifest.json", "application/manifest+json; charset=utf-8")
@@ -190,18 +224,19 @@ class PWAAndApiHandler(BaseHTTPRequestHandler):
         except Exception:
             req_data = {}
 
-        # 1. API: Чат с Gemini
+        # 1. API: Чат с Агентом Гермес / Multi-LLM
         if path == "/api/chat":
             user_message = req_data.get("message", "").strip()
             user_id = int(req_data.get("user_id", 1))
+            target_model = req_data.get("model")
 
             if not user_message:
                 self._send_json(400, {"error": "Message is empty"})
                 return
 
             try:
-                from services.gemini_service import gemini_service
-                reply = gemini_service.chat(user_id=user_id, user_message=user_message)
+                from services.hermes_service import hermes_service
+                reply = hermes_service.chat(user_id=user_id, user_message=user_message, target_model=target_model)
                 self._send_json(200, {"reply": reply})
             except Exception as e:
                 logger.exception("Ошибка обработки веб-сообщения:")
@@ -221,13 +256,21 @@ class PWAAndApiHandler(BaseHTTPRequestHandler):
                     get_custom_rules,
                     get_temperature,
                     get_response_style,
-                    get_setting
+                    get_setting,
+                    set_setting,
+                    set_user_model,
                 )
+                from config import AVAILABLE_MODELS
 
                 if action == "set_style":
                     set_response_style(req_data.get("style", "default"))
                 elif action == "set_temp":
                     set_temperature(float(req_data.get("temperature", 0.7)))
+                elif action == "set_model":
+                    new_m = req_data.get("model")
+                    if new_m in AVAILABLE_MODELS:
+                        set_user_model(1, new_m)
+                        set_setting("default_model", new_m)
                 elif action == "add_rule":
                     rule = req_data.get("rule", "").strip()
                     if rule:

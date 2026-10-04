@@ -131,5 +131,29 @@ class TestPWAAndApi(unittest.TestCase):
         health_data = json.loads(body.decode("utf-8"))
         self.assertEqual(health_data.get("status"), "ok")
 
+    def test_07_api_models(self):
+        code, _, body = self._simulate_get("/api/models")
+        self.assertEqual(code, 200)
+        models_data = json.loads(body.decode("utf-8"))
+        self.assertIn("models", models_data)
+        self.assertIn("providers", models_data)
+        model_ids = [m["id"] for m in models_data["models"]]
+        self.assertIn("auto-hermes", model_ids)
+        self.assertIn("deepseek-reasoner", model_ids)
+        self.assertIn("claude-3-5-sonnet", model_ids)
+
+    def test_08_api_chat_with_hermes(self):
+        from unittest.mock import patch
+        from services.hermes_service import hermes_service
+        with patch.object(hermes_service.providers["gemini"], "generate", return_value="Привет от Гермеса!"):
+            code, _, body = self._simulate_post("/api/chat", {
+                "message": "Привет!",
+                "model": "auto-hermes"
+            })
+            self.assertEqual(code, 200)
+            data = json.loads(body.decode("utf-8"))
+            self.assertIn("reply", data)
+            self.assertIn("Привет от Гермеса!", data["reply"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@ import threading
 import logging
 from telebot import TeleBot, types
 from services.gemini_service import gemini_service
+from services.hermes_service import hermes_service
 from services.antigravity_service import antigravity_service
 from services.database import (
     ensure_user,
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, user_text: str):
     """
     Единая точка входа для обработки запроса пользователя (текстового или расшифрованного из голоса).
-    Маршрутизирует запрос либо в Antigravity Agent (CLI), либо в прямой Gemini API.
+    Маршрутизирует запрос либо в Агент Гермес (Мульти-LLM), либо в Antigravity Agent (CLI).
     """
     ensure_user(user_id, username=message.from_user.username, first_name=message.from_user.first_name)
 
@@ -33,6 +34,9 @@ def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, use
         safe_send_message(bot, message.chat.id, config_reply, reply_to_message_id=message.message_id)
         return
 
+    # Проверка явного вызова Агента Гермес или конкретной LLM (например: "Гермес, спроси у DeepSeek: ...")
+    explicit_model, _ = hermes_service.parse_explicit_route(user_text)
+
     mode = get_user_engine_mode(user_id)
     access_mode = get_setting("agent_access_mode", "admin_only")
 
@@ -41,14 +45,14 @@ def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, use
         safe_send_message(
             bot,
             message.chat.id,
-            "ℹ️ _Режим Antigravity Agent с доступом к терминалу и кодовой базе ограничен Администратором. Ваш запрос обрабатывается через прямой Gemini API._"
+            "ℹ️ _Режим Antigravity Agent с доступом к терминалу и кодовой базе ограничен Администратором. Запрос перенаправлен в Агент Гермес._"
         )
-        mode = "direct"
+        mode = "hermes"
 
     # ---------------------------------------------------------
-    # РЕЖИМ: ANTIGRAVITY AGENT (CLI)
+    # РЕЖИМ: ANTIGRAVITY AGENT (CLI) - только если нет явного вызова Гермеса
     # ---------------------------------------------------------
-    if mode == "agent" and antigravity_service.is_available():
+    if not explicit_model and mode == "agent" and antigravity_service.is_available():
         conv_id = get_user_antigravity_conv(user_id)
         is_new = conv_id is None
 
@@ -130,7 +134,7 @@ def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, use
             stop_typing.set()
 
     # ---------------------------------------------------------
-    # РЕЖИМ: GEMINI DIRECT (или резервный при ошибке агента)
+    # РЕЖИМ: АГЕНТ ГЕРМЕС / МУЛЬТИ-LLM (или резервный при ошибке агента)
     # ---------------------------------------------------------
     bot.send_chat_action(message.chat.id, "typing")
     dynamic_status_msg_id = None
@@ -157,7 +161,7 @@ def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, use
             pass
 
     try:
-        reply = gemini_service.chat(user_id=user_id, user_message=user_text, on_status=on_direct_status)
+        reply = hermes_service.chat(user_id=user_id, user_message=user_text, on_status=on_direct_status)
         if dynamic_status_msg_id:
             try:
                 bot.delete_message(message.chat.id, dynamic_status_msg_id)

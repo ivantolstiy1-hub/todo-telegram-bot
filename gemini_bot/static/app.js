@@ -84,6 +84,29 @@ function setupChat() {
   const chatInput = document.getElementById("chatInput");
   const sendBtn = document.getElementById("sendBtn");
 
+  const chatModelSelect = document.getElementById("chatModelSelect");
+
+  async function loadModels() {
+    try {
+      const res = await fetch("/api/models");
+      const data = await res.json();
+      if (data.models && chatModelSelect) {
+        chatModelSelect.innerHTML = "";
+        data.models.forEach((m) => {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          const icon = m.id === "auto-hermes" ? "✨" : (m.configured ? "🟢" : "🔑");
+          opt.textContent = `${icon} ${m.name.replace(/^[^\s]+\s+/, '')}`;
+          if (m.id === data.current_model) opt.selected = true;
+          chatModelSelect.appendChild(opt);
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to load models list:", e);
+    }
+  }
+  loadModels();
+
   function scrollToBottom() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
@@ -113,6 +136,7 @@ function setupChat() {
   async function sendMessage() {
     const text = chatInput.value.trim();
     if (!text) return;
+    const selectedModel = chatModelSelect ? chatModelSelect.value : "auto-hermes";
 
     appendMessage("user", text);
     chatInput.value = "";
@@ -122,7 +146,7 @@ function setupChat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ message: text, model: selectedModel })
       });
       const data = await res.json();
       removeTyping();

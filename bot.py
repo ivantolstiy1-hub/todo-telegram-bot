@@ -15,7 +15,7 @@ WEBAPP_URL = "https://todo-telegram-bot-tt80.onrender.com"
 BASE_DIR = Path(__file__).resolve().parent
 TASKS_FILE = BASE_DIR / "tasks.json"
 
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+bot = telebot.TeleBot(BOT_TOKEN)
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="ru">
@@ -40,7 +40,7 @@ HTML_PAGE = """<!DOCTYPE html>
       margin: 0;
       padding: 16px;
     }
-    h2 { margin: 0 0 16px 0; font-size: 22px; font-weight: 700; }
+    h2 { margin: 0 0 16px 0; font-size: 20px; font-weight: 700; }
     .box {
       background: var(--card);
       border-radius: 14px;
@@ -104,7 +104,14 @@ HTML_PAGE = """<!DOCTYPE html>
     tg.ready();
     tg.expand();
 
-    const userId = (tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user.id : "default";
+    // Получаем реальный Telegram ID пользователя
+    let userId = "default";
+    if (tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
+      userId = String(tg.initDataUnsafe.user.id);
+    } else {
+      const urlParams = new URLSearchParams(window.location.search);
+      userId = urlParams.get('userId') || "default";
+    }
 
     async function loadTasks() {
       try {
@@ -145,14 +152,20 @@ HTML_PAGE = """<!DOCTYPE html>
 
     async function addTask() {
       const inp = document.getElementById("taskInput");
-      const remind = document.getElementById("remindInput").value;
+      const remindVal = document.getElementById("remindInput").value;
       const title = inp.value.trim();
       if (!title) return;
+
+      // Переводим выбранное локальное время в миллисекунды (timestamp) для точного сравнения
+      let remindTimestamp = null;
+      if (remindVal) {
+        remindTimestamp = new Date(remindVal).getTime();
+      }
 
       await fetch('/api/add', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ userId, title, remind_at: remind || null })
+        body: JSON.stringify({ userId, title, remind_at: remindVal, remind_ts: remindTimestamp })
       });
       inp.value = "";
       document.getElementById("remindInput").value = "";
@@ -203,7 +216,7 @@ def save_all_tasks(data):
 def get_user_tasks(uid):
     return load_all_tasks().get(str(uid), [])
 
-def add_user_task(uid, title, remind_at=None):
+def add_user_task(uid, title, remind_at=None, remind_ts=None):
     data = load_all_tasks()
     u = str(uid)
     tasks = data.get(u, [])
@@ -212,7 +225,8 @@ def add_user_task(uid, title, remind_at=None):
         "id": new_id,
         "title": title.strip(),
         "done": False,
-        "remind_at": remind_at
+        "remind_at": remind_at,
+        "remind_ts": remind_ts
     })
     data[u] = tasks
     save_all_tasks(data)
@@ -242,57 +256,34 @@ def notification_worker():
     while True:
         try:
             data = load_all_tasks()
-            now = datetime.now()
+            now_ms = int(time.time() * 1000)
             modified = False
 
             for uid, tasks in data.items():
-                if uid == "default":
+                if not uid.isdigit():
                     continue
                 for task in tasks:
-                    remind_str = task.get("remind_at")
-                    if remind_str and not task.get("done"):
-                        try:
-                            remind_time = datetime.fromisoformat(remind_str)
-                            if now >= remind_time:
+                    remind_ts = task.get("remind_ts")
+                    if remind_ts and not task.get("done"):
+                        if now_ms >= int(remind_ts):
+                            try:
                                 bot.send_message(
                                     int(uid),
-                                    f"⏰ **Напоминание о задаче!**\n\n📌 {task.get('title')}\n\nСделайте её или отметьте выполненной в приложении!",
+                                    f"⏰ **Напоминание о задаче!**\n\n📌 {task.get('title')}",
                                     parse_mode="Markdown"
                                 )
+                                task["remind_ts"] = None
                                 task["remind_at"] = None
                                 modified = True
-                        except Exception as e:
-                            print(f"Ошибка даты: {e}")
+                            except Exception as e:
+                                print(f"Не удалось отправить уведомление пользователю {uid}: {e}")
+
             if modified:
                 save_all_tasks(data)
         except Exception as e:
-            print(f"Ошибка воркера: {e}")
-        time.sleep(20)
+            print(f"Ошибка воркера напоминаний: {e}")
 
-@bot.message_handler(commands=['start'])
-def welcome(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(WEBAPP_URL)))
-    markup.add(types.KeyboardButton("📋 Показать список задач"))
-    bot.send_message(
-        message.chat.id,
-        "Привет! Я твой планировщик задач с напоминаниями.\n\nНажми кнопку **«🚀 Открыть Планировщик»** ниже для управления задачами:",
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
-
-@bot.message_handler(func=lambda m: m.text == "📋 Показать список задач")
-def send_tasks(message):
-    tasks = get_user_tasks(message.from_user.id)
-    if not tasks:
-        bot.send_message(message.chat.id, "Список задач пуст! 🎉")
-        return
-    text = "📋 **Твои задачи:**\n\n"
-    for t in tasks:
-        icon = "✅" if t.get("done") else "⬜"
-        remind = f" (⏰ {t['remind_at']})" if t.get("remind_at") else ""
-        text += f"{icon} `#{t['id']}` {t['title']}{remind}\n"
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+        time.sleep(15)
 
 class MiniAppServer(BaseHTTPRequestHandler):
     def _send_json(self, d):
@@ -335,22 +326,11 @@ class MiniAppServer(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
-
-        # Telegram webhook handler
-        if parsed.path == f"/webhook/{BOT_TOKEN}":
-            if body:
-                update_dict = json.loads(body.decode("utf-8"))
-                update = types.Update.de_json(update_dict)
-                bot.process_new_updates([update])
-            self.send_response(200)
-            self.end_headers()
-            return
-
         payload = json.loads(body.decode("utf-8")) if body else {}
         uid = payload.get("userId", "default")
 
         if parsed.path == "/api/add":
-            nid = add_user_task(uid, payload.get("title", ""), payload.get("remind_at"))
+            nid = add_user_task(uid, payload.get("title", ""), payload.get("remind_at"), payload.get("remind_ts"))
             self._send_json({"success": True, "id": nid})
         elif parsed.path == "/api/toggle":
             res = toggle_user_task(uid, int(payload.get("id")))
@@ -367,18 +347,45 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), MiniAppServer)
     server.serve_forever()
 
+@bot.message_handler(commands=['start'])
+def welcome(message):
+    user_url = f"{WEBAPP_URL}?userId={message.from_user.id}"
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("🚀 Открыть Планировщик", web_app=types.WebAppInfo(user_url)))
+    markup.add(types.KeyboardButton("📋 Мои задачи"))
+    bot.send_message(
+        message.chat.id,
+        "👋 Планировщик готов к работе!\n\nНажмите кнопку ниже, чтобы открыть задачи и настроить напоминания:",
+        reply_markup=markup
+    )
+
+@bot.message_handler(func=lambda m: m.text == "📋 Мои задачи")
+def list_tasks_chat(message):
+    tasks = get_user_tasks(message.from_user.id)
+    if not tasks:
+        bot.send_message(message.chat.id, "Список пуст 🎉")
+        return
+    text = "📋 **Ваши задачи:**\n\n"
+    for t in tasks:
+        icon = "✅" if t.get("done") else "⬜"
+        remind = f" (⏰ {t['remind_at']})" if t.get("remind_at") else ""
+        text += f"{icon} `#{t['id']}` {t['title']}{remind}\n"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
 if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
     threading.Thread(target=notification_worker, daemon=True).start()
 
     time.sleep(2)
-    # Настраиваем webhook на URL нашего сервиса Render
-    webhook_url = f"{WEBAPP_URL}/webhook/{BOT_TOKEN}"
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.set_webhook(url=webhook_url)
-    print(f"Webhook успешно установлен на {webhook_url}")
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        print(f"Ошибка сброса webhook: {e}")
 
-    # Держим главный поток активным
+    print("Бот запускает polling...")
     while True:
-        time.sleep(3600)
+        try:
+            bot.polling(none_stop=True, interval=1, timeout=25)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(4)

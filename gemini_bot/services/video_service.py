@@ -163,48 +163,76 @@ class FalVideoProvider(BaseVideoProvider):
         k = self.api_key
         return bool(k and len(k) > 10)
 
-    def generate_video(
+    def _submit_and_poll_queue(
         self,
-        prompt: str,
-        aspect_ratio: str = "16:9",
-        duration_sec: int = 5,
+        model_name: str,
+        arguments: dict,
         on_status: Optional[Callable[[str], None]] = None,
-        model_name: str = "fal-ai/kling-video/v1/standard/text-to-video",
+        provider_label: str = "Fal.ai (Kling AI 1.5)",
     ) -> Dict[str, Any]:
-        if not self.is_configured():
-            raise RuntimeError("FAL_KEY не настроен")
+        """
+        Универсальный и отказоустойчивый запуск генерации в Fal.ai.
+        1. Если fal_client установлен — использует его.
+        2. Если fal_client нет — прозрачно использует стандартный requests HTTP REST API!
+        3. Корректно определяет 401 (отозванный ключ) и 403 (исчерпанный баланс).
+        """
         key = self.api_key or "mock_fal_key"
+        os.environ["FAL_KEY"] = key
 
-        if on_status:
-            on_status("⚡ Fal.ai: Постановка задачи в очередь Kling AI 1.5...")
+        # 1. Попытка через fal_client если модуль установлен
+        try:
+            import fal_client
+            handler = fal_client.submit(model_name, arguments=arguments)
+            result = handler.get()
+            out_url = result.get("video", {}).get("url")
+            if out_url:
+                return {
+                    "status": "completed",
+                    "video_url": out_url,
+                    "provider": provider_label,
+                    "details": f"{provider_label} generated successfully",
+                }
+        except ImportError:
+            # fal_client не установлен — используем прямой REST API без сбоев
+            pass
+        except Exception as e:
+            err_str = str(e)
+            if "revoked" in err_str.lower() or "401" in err_str:
+                raise RuntimeError(
+                    "API-ключ Fal.ai отозван (Credential has been revoked). "
+                    "Выпустите новый ключ в https://fal.ai/dashboard/keys и укажите: /set_key FAL_KEY ваш_ключ"
+                )
+            if "exhausted" in err_str.lower() or "locked" in err_str.lower() or "403" in err_str:
+                raise RuntimeError(
+                    "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
+                    "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing"
+                )
+            logger.warning(f"fal_client execution error: {e}, falling back to direct REST API...")
 
-        ratio = "9:16" if "9:16" in aspect_ratio else "16:9"
-        duration_str = "5" if duration_sec <= 5 else "10"
-
+        # 2. Прямой вызов через requests (REST API)
         headers = {
             "Authorization": f"Key {key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "prompt": prompt,
-            "aspect_ratio": ratio,
-            "duration": duration_str,
-        }
-
         submit_url = f"{self.QUEUE_BASE}/{model_name}"
-        resp = requests.post(submit_url, headers=headers, json=payload, timeout=30)
+        resp = requests.post(submit_url, headers=headers, json=arguments, timeout=30)
+
+        if resp.status_code == 401 or "revoked" in resp.text.lower():
+            raise RuntimeError(
+                "API-ключ Fal.ai отозван (Credential has been revoked). "
+                "Выпустите новый ключ в https://fal.ai/dashboard/keys и укажите: /set_key FAL_KEY ваш_ключ"
+            )
+        if resp.status_code == 403 or "exhausted" in resp.text.lower():
+            raise RuntimeError(
+                "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
+                "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing"
+            )
         if resp.status_code not in (200, 201):
-            if resp.status_code == 403 and ("Exhausted" in resp.text or "locked" in resp.text.lower()):
-                raise RuntimeError(
-                    "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
-                    "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing для генерации видео."
-                )
-            raise RuntimeError(f"Fal.ai API error ({resp.status_code}): {resp.text[:300]}")
+            raise RuntimeError(f"Fal.ai API error ({resp.status_code}): {resp.text[:200]}")
 
         data = resp.json()
         status_url = data.get("status_url")
         response_url = data.get("response_url")
-
         if not status_url or not response_url:
             raise RuntimeError(f"Fal.ai не вернул URL для отслеживания: {data}")
 
@@ -213,7 +241,7 @@ class FalVideoProvider(BaseVideoProvider):
         for attempt in range(max_attempts):
             time.sleep(5)
             if on_status:
-                on_status(f"⚡ Fal.ai (Kling AI): Генерация видеокадров... ({attempt * 5} сек) ⏳")
+                on_status(f"⚡ {provider_label}: Генерация видеокадров... ({attempt * 5} сек) ⏳")
 
             poll_resp = requests.get(status_url, headers=headers, timeout=20)
             if poll_resp.status_code != 200:
@@ -223,7 +251,6 @@ class FalVideoProvider(BaseVideoProvider):
             status = poll_data.get("status")
 
             if status == "COMPLETED":
-                # Получаем готовый результат
                 res_resp = requests.get(response_url, headers=headers, timeout=20)
                 if res_resp.status_code == 200:
                     res_data = res_resp.json()
@@ -233,8 +260,8 @@ class FalVideoProvider(BaseVideoProvider):
                         return {
                             "status": "completed",
                             "video_url": video_url,
-                            "provider": self.display_name,
-                            "details": f"Kling 1.5 video rendered successfully via Fal.ai",
+                            "provider": provider_label,
+                            "details": f"{provider_label} generated successfully via REST",
                         }
             elif status in ("FAILED", "CANCELLED"):
                 error_msg = poll_data.get("error", "Генерация отменена или завершилась с ошибкой")
@@ -250,18 +277,67 @@ class FalVideoProvider(BaseVideoProvider):
         if isinstance(media_data, str) and (media_data.startswith("http://") or media_data.startswith("https://")):
             return media_data
 
+        key = self.api_key or "mock_fal_key"
+        os.environ["FAL_KEY"] = key
+
+        # 1. Попытка через fal_client если библиотека установлена
         try:
             import fal_client
-            key = self.api_key or "mock_fal_key"
-            os.environ["FAL_KEY"] = key
             if isinstance(media_data, bytes):
                 return fal_client.upload(media_data, content_type=content_type)
             elif isinstance(media_data, str) and os.path.exists(media_data):
                 return fal_client.upload_file(media_data)
+        except ImportError:
+            pass
         except Exception as e:
-            logger.warning(f"Ошибка загрузки в Fal CDN: {e}")
-            raise
+            logger.warning(f"fal_client upload warning: {e}")
+
+        # 2. Прямая загрузка через REST API Fal.ai Storage
+        try:
+            headers = {"Authorization": f"Key {key}"}
+            init_url = "https://rest.alpha.fal.ai/storage/upload/initiate"
+            init_resp = requests.post(init_url, headers=headers, json={"content_type": content_type}, timeout=15)
+            if init_resp.status_code in (200, 201):
+                init_data = init_resp.json()
+                upload_url = init_data.get("upload_url")
+                file_url = init_data.get("file_url")
+                if upload_url and file_url:
+                    data_bytes = media_data if isinstance(media_data, bytes) else open(media_data, "rb").read()
+                    put_resp = requests.put(upload_url, data=data_bytes, headers={"Content-Type": content_type}, timeout=60)
+                    if put_resp.status_code in (200, 201):
+                        return file_url
+        except Exception as e:
+            logger.warning(f"REST upload error: {e}")
+
         return str(media_data)
+
+    def generate_video(
+        self,
+        prompt: str,
+        aspect_ratio: str = "16:9",
+        duration_sec: int = 5,
+        on_status: Optional[Callable[[str], None]] = None,
+        model_name: str = "fal-ai/kling-video/v1/standard/text-to-video",
+    ) -> Dict[str, Any]:
+        if not self.is_configured():
+            raise RuntimeError("FAL_KEY не настроен")
+
+        if on_status:
+            on_status("⚡ Fal.ai: Постановка задачи в очередь Kling AI 1.5...")
+
+        ratio = "9:16" if "9:16" in aspect_ratio else "16:9"
+        duration_str = "5" if duration_sec <= 5 else "10"
+        arguments = {
+            "prompt": prompt,
+            "aspect_ratio": ratio,
+            "duration": duration_str,
+        }
+        return self._submit_and_poll_queue(
+            model_name=model_name,
+            arguments=arguments,
+            on_status=on_status,
+            provider_label=self.display_name,
+        )
 
     def generate_video_to_video(
         self,
@@ -275,8 +351,6 @@ class FalVideoProvider(BaseVideoProvider):
     ) -> Dict[str, Any]:
         if not self.is_configured():
             raise RuntimeError("FAL_KEY не настроен")
-        key = self.api_key or "mock_fal_key"
-        os.environ["FAL_KEY"] = key
 
         if on_status:
             on_status("📤 Подготовка и загрузка исходного видео в Kling AI 1.5...")
@@ -294,29 +368,12 @@ class FalVideoProvider(BaseVideoProvider):
             "strength": strength,
             "duration": duration_str,
         }
-
-        try:
-            import fal_client
-            handler = fal_client.submit(model_name, arguments=arguments)
-            result = handler.get()
-            out_url = result.get("video", {}).get("url")
-            if out_url:
-                return {
-                    "status": "completed",
-                    "video_url": out_url,
-                    "provider": "Fal.ai (Kling AI 1.5 Video-to-Video)",
-                    "details": "Video-to-Video transformation completed via Kling 1.5",
-                }
-        except Exception as e:
-            err_str = str(e)
-            if "Exhausted" in err_str or "locked" in err_str.lower() or "403" in err_str:
-                raise RuntimeError(
-                    "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
-                    "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing для генерации видео."
-                )
-            raise RuntimeError(f"Kling Video-to-Video error: {err_str}")
-
-        raise RuntimeError("Не удалось получить видео из ответа Kling AI 1.5")
+        return self._submit_and_poll_queue(
+            model_name=model_name,
+            arguments=arguments,
+            on_status=on_status,
+            provider_label="Fal.ai (Kling AI 1.5 Video-to-Video)",
+        )
 
     def generate_image_to_video(
         self,
@@ -330,8 +387,6 @@ class FalVideoProvider(BaseVideoProvider):
     ) -> Dict[str, Any]:
         if not self.is_configured():
             raise RuntimeError("FAL_KEY не настроен")
-        key = self.api_key or "mock_fal_key"
-        os.environ["FAL_KEY"] = key
 
         if on_status:
             on_status("📤 Подготовка исходного фото в Kling AI 1.5...")
@@ -349,29 +404,12 @@ class FalVideoProvider(BaseVideoProvider):
             "duration": duration_str,
             "mode": mode,
         }
-
-        try:
-            import fal_client
-            handler = fal_client.submit(model_name, arguments=arguments)
-            result = handler.get()
-            out_url = result.get("video", {}).get("url")
-            if out_url:
-                return {
-                    "status": "completed",
-                    "video_url": out_url,
-                    "provider": "Fal.ai (Kling AI 1.5 Image-to-Video)",
-                    "details": "Image-to-Video animation completed via Kling 1.5",
-                }
-        except Exception as e:
-            err_str = str(e)
-            if "Exhausted" in err_str or "locked" in err_str.lower() or "403" in err_str:
-                raise RuntimeError(
-                    "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
-                    "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing для генерации видео."
-                )
-            raise RuntimeError(f"Kling Image-to-Video error: {err_str}")
-
-        raise RuntimeError("Не удалось получить видео из ответа Kling AI 1.5")
+        return self._submit_and_poll_queue(
+            model_name=model_name,
+            arguments=arguments,
+            on_status=on_status,
+            provider_label="Fal.ai (Kling AI 1.5 Image-to-Video)",
+        )
 
 
 # =====================================================================
@@ -737,12 +775,23 @@ class VideoService:
         # Добавляем баннер о статусе ключей и инструкции подключения
         status_banner = ""
         p_status = self.get_providers_status()
-        if "исчерпан баланс" in last_error or "Exhausted" in last_error:
+        if "revoked" in last_error.lower() or "отозван" in last_error.lower() or "401" in last_error:
             status_banner = (
                 "\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 "⚠️ *Статус API ключа Fal.ai:*\n"
-                "Ключ проверен и валиден, но на аккаунте Fal.ai закончились кредиты (`Exhausted balance`).\n"
-                "👉 Чтобы бот генерировал видео напрямую, пополните баланс на [fal.ai/dashboard/billing](https://fal.ai/dashboard/billing).\n"
+                "Прежний ключ был отозван системой безопасности (`Credential has been revoked`).\n"
+                "👉 Выпустите новый бесплатный ключ в [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) "
+                "и отправьте боту команду:\n"
+                "   `/set_key FAL_KEY ваш_новый_ключ`\n"
+                "А пока вы можете скопировать готовые промпты выше в веб-версию Kling AI или Luma Dream Machine!\n"
+            )
+        elif "исчерпан баланс" in last_error or "exhausted" in last_error.lower() or "403" in last_error:
+            status_banner = (
+                "\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "⚠️ *Статус API ключа Fal.ai:*\n"
+                "Ключ проверен, но на аккаунте Fal.ai закончились бесплатные кредиты (`Exhausted balance`).\n"
+                "👉 Чтобы бот генерировал видео напрямую, пополните баланс на [fal.ai/dashboard/billing](https://fal.ai/dashboard/billing) "
+                "или получите новый ключ с другого аккаунта fal.ai.\n"
                 "А пока вы можете скопировать готовые промпты выше в веб-версию Kling AI или Luma Dream Machine!\n"
             )
         elif not any(p_status.values()):

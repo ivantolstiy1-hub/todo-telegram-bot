@@ -230,9 +230,16 @@ if __name__ == "__main__":
     threading.Thread(target=notification_worker, daemon=True).start()
     print("Бот и WebApp запущены...")
     
+    # Сбрасываем зависшие соединения Telegram перед стартом
+    try:
+        bot.remove_webhook(drop_pending_updates=True)
+        time.sleep(1)
+    except Exception as e:
+        print(f"Ошибка сброса webhook: {e}")
+
     while True:
         try:
-            bot.polling(none_stop=True, interval=0, timeout=20)
+            bot.polling(none_stop=True, interval=1, timeout=30)
         except Exception as e:
             print(f"Polling error: {e}")
             time.sleep(5)

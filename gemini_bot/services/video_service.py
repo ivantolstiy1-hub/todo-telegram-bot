@@ -23,6 +23,7 @@ from config import (
     LUMA_API_KEY,
     RUNWAY_API_KEY,
 )
+from utils.helpers import get_dynamic_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +70,13 @@ class LumaVideoProvider(BaseVideoProvider):
     display_name = "Luma Dream Machine (Ray 2)"
     CREATE_URL = "https://api.lumalabs.ai/dream-machine/v1/generations"
 
+    @property
+    def api_key(self) -> str:
+        return get_dynamic_api_key("LUMA_API_KEY", LUMA_API_KEY)
+
     def is_configured(self) -> bool:
-        return bool(LUMA_API_KEY and len(LUMA_API_KEY) > 10)
+        k = self.api_key
+        return bool(k and len(k) > 10)
 
     def generate_video(
         self,
@@ -81,6 +87,7 @@ class LumaVideoProvider(BaseVideoProvider):
     ) -> Dict[str, Any]:
         if not self.is_configured():
             raise RuntimeError("LUMA_API_KEY не настроен")
+        key = self.api_key or "mock_luma_key"
 
         if on_status:
             on_status("🎬 Luma Dream Machine: Отправка задания на генерацию...")
@@ -89,7 +96,7 @@ class LumaVideoProvider(BaseVideoProvider):
         ratio = "9:16" if "9:16" in aspect_ratio else "16:9"
 
         headers = {
-            "Authorization": f"Bearer {LUMA_API_KEY}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -148,8 +155,13 @@ class FalVideoProvider(BaseVideoProvider):
     display_name = "Fal.ai (Kling AI 1.5 / Minimax Hailuo)"
     QUEUE_BASE = "https://queue.fal.run"
 
+    @property
+    def api_key(self) -> str:
+        return get_dynamic_api_key("FAL_KEY", FAL_KEY)
+
     def is_configured(self) -> bool:
-        return bool(FAL_KEY and len(FAL_KEY) > 10)
+        k = self.api_key
+        return bool(k and len(k) > 10)
 
     def generate_video(
         self,
@@ -161,6 +173,7 @@ class FalVideoProvider(BaseVideoProvider):
     ) -> Dict[str, Any]:
         if not self.is_configured():
             raise RuntimeError("FAL_KEY не настроен")
+        key = self.api_key or "mock_fal_key"
 
         if on_status:
             on_status("⚡ Fal.ai: Постановка задачи в очередь Kling AI 1.5...")
@@ -169,7 +182,7 @@ class FalVideoProvider(BaseVideoProvider):
         duration_str = "5" if duration_sec <= 5 else "10"
 
         headers = {
-            "Authorization": f"Key {FAL_KEY}",
+            "Authorization": f"Key {key}",
             "Content-Type": "application/json",
         }
         payload = {
@@ -181,6 +194,11 @@ class FalVideoProvider(BaseVideoProvider):
         submit_url = f"{self.QUEUE_BASE}/{model_name}"
         resp = requests.post(submit_url, headers=headers, json=payload, timeout=30)
         if resp.status_code not in (200, 201):
+            if resp.status_code == 403 and ("Exhausted" in resp.text or "locked" in resp.text.lower()):
+                raise RuntimeError(
+                    "На аккаунте fal.ai исчерпан баланс (Exhausted balance). "
+                    "Пожалуйста, пополните баланс на https://fal.ai/dashboard/billing для генерации видео."
+                )
             raise RuntimeError(f"Fal.ai API error ({resp.status_code}): {resp.text[:300]}")
 
         data = resp.json()
@@ -523,6 +541,7 @@ class VideoService:
         if not clean_idea or len(clean_idea) < 3:
             clean_idea = prompt.strip()
 
+        last_error = ""
         # Попытка прямой генерации видео при наличии API ключей
         if not force_storyboard_only and self.has_any_active_provider():
             enhanced_eng = CinematicPromptEnhancer.enhance(clean_idea, aspect_ratio)
@@ -556,6 +575,7 @@ class VideoService:
                         "prompt": enhanced_eng,
                     }
             except Exception as e:
+                last_error = str(e)
                 logger.warning(f"Ошибка при прямой генерации видео через {provider.display_name}: {e}. Включаем режиссерский сценарий...")
                 if on_status:
                     on_status("⚠️ Прямой рендеринг вернул ошибку. Формирую подробный режиссерский монтажный план...")
@@ -569,7 +589,15 @@ class VideoService:
         # Добавляем баннер о статусе ключей и инструкции подключения
         status_banner = ""
         p_status = self.get_providers_status()
-        if not any(p_status.values()):
+        if "исчерпан баланс" in last_error or "Exhausted" in last_error:
+            status_banner = (
+                "\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "⚠️ *Статус API ключа Fal.ai:*\n"
+                "Ключ проверен и валиден, но на аккаунте Fal.ai закончились кредиты (`Exhausted balance`).\n"
+                "👉 Чтобы бот генерировал видео напрямую, пополните баланс на [fal.ai/dashboard/billing](https://fal.ai/dashboard/billing).\n"
+                "А пока вы можете скопировать готовые промпты выше в веб-версию Kling AI или Luma Dream Machine!\n"
+            )
+        elif not any(p_status.values()):
             status_banner = (
                 "\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 "💡 *Как включить прямой рендеринг видео в боте:*\n"
@@ -577,7 +605,15 @@ class VideoService:
                 "или [lumalabs.ai](https://lumalabs.ai) (Luma Ray 2).\n"
                 "2. В настройках сервиса на Render добавьте переменную окружения:\n"
                 "   `FAL_KEY` = `ваш_ключ` или `LUMA_API_KEY` = `ваш_ключ`.\n"
+                "   Либо администратор может отправить боту команду:\n"
+                "   `/set_key FAL_KEY ваш_ключ`\n"
                 "3. Бот начнет мгновенно рендерить и присылать готовые `.mp4` файлы прямо сюда в Telegram!\n"
+            )
+        elif last_error:
+            status_banner = (
+                f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"⚠️ *Заметка:* Рендеринг временно вернул ошибку: `{last_error[:120]}`.\n"
+                f"Используйте режиссерский сценарий и готовые промпты выше для бесплатного запуска в веб-интерфейсе."
             )
 
         full_reply = f"{storyboard_text}{status_banner}"

@@ -15,6 +15,18 @@ services:
         sync: false
       - key: GEMINI_API_KEYS
         sync: false
+      - key: FAL_KEY
+        sync: false
+      - key: LUMA_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: ADMIN_IDS
         value: "8173946372,8562721499"
       - key: DEFAULT_MODEL

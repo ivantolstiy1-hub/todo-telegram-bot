@@ -216,6 +216,47 @@ class TestVideoAI(unittest.TestCase):
             self.assertEqual(res["status"], "fallback")
             self.assertIn("РЕЖИССЕРСКИЙ МОНТАЖНЫЙ ПЛАН", res["text"])
 
+    def test_fal_provider_exhausted_balance_error(self):
+        """Проверка специальной обработки 403 Exhausted Balance от Fal.ai."""
+        prov = FalVideoProvider()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_resp.text = '{"detail":"User is locked. Reason: Exhausted balance. Top up your balance at fal.ai/dashboard/billing."}'
+        with patch.object(prov, "is_configured", return_value=True), \
+             patch("requests.post", return_value=mock_resp):
+            with self.assertRaises(RuntimeError) as ctx:
+                prov.generate_video("test prompt")
+            self.assertIn("исчерпан баланс", str(ctx.exception))
+            self.assertIn("fal.ai/dashboard/billing", str(ctx.exception))
+
+    def test_generation_exhausted_balance_banner(self):
+        """Проверка появления понятного баннера в раскадровке при нулевом балансе."""
+        with patch.object(video_service.fal, "is_configured", return_value=True), \
+             patch.object(video_service.fal, "generate_video", side_effect=RuntimeError("На аккаунте fal.ai исчерпан баланс (Exhausted balance)")):
+            res = video_service.generate_or_direct("мем с клоуном", aspect_ratio="9:16")
+            self.assertEqual(res["status"], "fallback")
+            self.assertIn("Exhausted balance", res["text"])
+            self.assertIn("fal.ai/dashboard/billing", res["text"])
+
+    def test_dynamic_key_resolution_from_db(self):
+        """Проверка подхвата ключа из базы данных SQLite при отсутствии переменной окружения."""
+        from services.database import set_setting
+        from utils.helpers import get_dynamic_api_key
+
+        test_key = "fal_sk_test_dynamic_key_from_db_12345"
+        set_setting("FAL_KEY", test_key)
+
+        with patch.dict("os.environ", {}, clear=False):
+            # Удаляем FAL_KEY из os.environ на время теста если есть
+            import os
+            orig = os.environ.pop("FAL_KEY", None)
+            try:
+                resolved = get_dynamic_api_key("FAL_KEY")
+                self.assertEqual(resolved, test_key)
+            finally:
+                if orig:
+                    os.environ["FAL_KEY"] = orig
+
 
 if __name__ == "__main__":
     unittest.main()

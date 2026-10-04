@@ -190,23 +190,43 @@ def register_admin_handlers(bot: TeleBot):
             bot.answer_callback_query(call.id)
 
         elif action == "keys":
+            from utils.helpers import get_dynamic_api_key
             key_stats = gemini_service.key_pool.get_stats()
             lines = [
                 "🔑 *Пул API-ключей Gemini и лимиты:*\n",
-                f"• Всего ключей: `{key_stats['total']}`",
+                f"• Всего Gemini ключей: `{key_stats['total']}`",
                 f"• Активных: `{key_stats['active']}`",
                 f"• На паузе (кулдаун): `{key_stats['cooldown']}`\n",
-                "*Зарегистрированные ключи:*"
+                "*Зарегистрированные ключи Gemini:*"
             ]
             for idx, kinfo in enumerate(key_stats["keys"], 1):
                 status_icon = "🟢 Готов" if kinfo["active"] else f"⏳ Пауза ({kinfo['cooldown_left']}с)"
                 lines.append(f"{idx}. `{kinfo['masked']}` — {status_icon}")
 
-            lines.append("\n💡 *Как добавить еще ключи для полного анлима:*")
-            lines.append("1. Получите бесплатный ключ в [Google AI Studio](https://aistudio.google.com/app/apikey)")
-            lines.append("2. Откройте файл `.env` в папке проекта")
-            lines.append("3. Добавьте ключи через запятую:\n`GEMINI_API_KEYS=key1,key2,key3`")
-            lines.append("4. Перезапустите бота. Каждый ключ умножает ваш лимит запросов!")
+            # Статус Video AI и Multi-LLM ключей
+            fal_k = get_dynamic_api_key("FAL_KEY")
+            luma_k = get_dynamic_api_key("LUMA_API_KEY")
+            openrouter_k = get_dynamic_api_key("OPENROUTER_API_KEY")
+            deepseek_k = get_dynamic_api_key("DEEPSEEK_API_KEY")
+            openai_k = get_dynamic_api_key("OPENAI_API_KEY")
+
+            def mask_k(k: str) -> str:
+                if not k or len(k) < 8:
+                    return "⚪ Не настроен"
+                return f"🟢 `{k[:6]}...{k[-4:]}`"
+
+            lines.append("\n🎬 *Video AI & Генерация:*")
+            lines.append(f"• `FAL_KEY` (Kling 1.5, Minimax): {mask_k(fal_k)}")
+            lines.append(f"• `LUMA_API_KEY` (Ray 2): {mask_k(luma_k)}")
+
+            lines.append("\n🧠 *Multi-LLM (Агент Гермес):*")
+            lines.append(f"• `OPENROUTER_API_KEY`: {mask_k(openrouter_k)}")
+            lines.append(f"• `DEEPSEEK_API_KEY`: {mask_k(deepseek_k)}")
+            lines.append(f"• `OPENAI_API_KEY`: {mask_k(openai_k)}")
+
+            lines.append("\n💡 *Команда быстрой смены ключей прямо в чате:*")
+            lines.append("`/set_key FAL_KEY ваш_ключ`")
+            lines.append("`/set_key GEMINI_API_KEYS ключ1,ключ2`")
 
             keys_text = "\n".join(lines)
             markup = types.InlineKeyboardMarkup()
@@ -224,6 +244,97 @@ def register_admin_handlers(bot: TeleBot):
             except Exception:
                 pass
             bot.answer_callback_query(call.id)
+
+    @bot.message_handler(commands=["set_key"])
+    def cmd_set_key(message: types.Message):
+        if not is_admin(message.from_user.id):
+            bot.reply_to(message, "⛔ У вас нет прав администратора.")
+            return
+
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            bot.reply_to(
+                message,
+                "⚠️ *Формат команды:*\n"
+                "`/set_key KEY_NAME VALUE`\n\n"
+                "*Примеры:*\n"
+                "• `/set_key FAL_KEY fal_sk_...`\n"
+                "• `/set_key LUMA_API_KEY luma_...`\n"
+                "• `/set_key OPENROUTER_API_KEY sk-or-...`\n"
+                "• `/set_key GEMINI_API_KEYS AIzaSy...`",
+                parse_mode="Markdown"
+            )
+            return
+
+        key_name = parts[1].strip().upper()
+        key_val = parts[2].strip()
+
+        ALLOWED_KEYS = {
+            "FAL_KEY",
+            "LUMA_API_KEY",
+            "RUNWAY_API_KEY",
+            "OPENROUTER_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GEMINI_API_KEYS",
+        }
+
+        if key_name not in ALLOWED_KEYS:
+            bot.reply_to(
+                message,
+                f"⚠️ Неизвестный ключ `{key_name}`. Допустимые ключи:\n" +
+                ", ".join(f"`{k}`" for k in sorted(ALLOWED_KEYS)),
+                parse_mode="Markdown"
+            )
+            return
+
+        # Сохраняем в SQLite и os.environ
+        set_setting(key_name, key_val)
+        import os
+        os.environ[key_name] = key_val
+
+        # Если обновлен GEMINI_API_KEYS, обновляем пул
+        if key_name in ("GEMINI_API_KEY", "GEMINI_API_KEYS"):
+            gemini_service.key_pool.reload_keys(key_val)
+
+        masked = key_val[:8] + "..." + key_val[-4:] if len(key_val) > 12 else "***"
+        extra_note = ""
+
+        # Для FAL_KEY проводим быструю онлайн-проверку аккаунта
+        if key_name == "FAL_KEY":
+            try:
+                import requests
+                resp = requests.get(
+                    "https://rest.alpha.fal.ai/users/current",
+                    headers={"Authorization": f"Key {key_val}"},
+                    timeout=5
+                )
+                if resp.status_code == 200:
+                    info = resp.json()
+                    user_login = info.get("user_id") or info.get("display_name", "")
+                    is_locked = info.get("is_locked", False)
+                    lock_reason = info.get("lock_reason", "")
+                    if is_locked:
+                        extra_note = (
+                            f"\n\n⚠️ *Статус Fal.ai:* Аккаунт `{user_login}` подтвержден, "
+                            f"но заблокирован: `{lock_reason}`.\n"
+                            f"👉 Пополните баланс на https://fal.ai/dashboard/billing"
+                        )
+                    else:
+                        extra_note = f"\n\n✨ *Fal.ai:* Аккаунт `{user_login}` активен, баланс доступен!"
+                else:
+                    extra_note = f"\n\n⚠️ Fal.ai API код ответа: {resp.status_code} ({resp.text[:100]})"
+            except Exception as e:
+                extra_note = f"\n\nℹ️ Не удалось проверить статус Fal.ai онлайн: {e}"
+
+        bot.reply_to(
+            message,
+            f"✅ *Ключ `{key_name}` успешно сохранен и активирован!*\n"
+            f"🔑 Значение: `{masked}`{extra_note}",
+            parse_mode="Markdown"
+        )
 
     @bot.message_handler(commands=["broadcast"])
     def cmd_broadcast(message: types.Message):

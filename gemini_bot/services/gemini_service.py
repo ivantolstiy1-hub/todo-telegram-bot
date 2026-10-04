@@ -121,6 +121,15 @@ class ApiKeyPool:
                 "keys": key_details
             }
 
+    def reload_keys(self, raw_keys: str):
+        """Динамически обновляет список ключей Gemini без перезагрузки бота."""
+        with self._lock:
+            new_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+            if new_keys:
+                self.keys = new_keys
+                self._cooldowns.clear()
+                logger.info(f"🔑 Gemini ApiKeyPool обновлен: {len(self.keys)} ключей загружено.")
+
 
 class GeminiService:
     def __init__(self, keys: Optional[List[str]] = None):

@@ -81,3 +81,24 @@ def safe_send_message(bot: TeleBot, chat_id: int, text: str, reply_markup=None, 
                 raise final_e
 
     return sent_messages
+
+
+def get_dynamic_api_key(key_name: str, default: str = "") -> str:
+    """
+    Универсальное динамическое получение API-ключа:
+    1. Переменная окружения process.env
+    2. Таблица bot_settings в SQLite
+    3. Значение по умолчанию
+    """
+    import os
+    val = os.getenv(key_name, "").strip()
+    if val:
+        return val
+    try:
+        from services.database import get_setting
+        db_val = get_setting(key_name, "").strip()
+        if db_val:
+            return db_val
+    except Exception:
+        pass
+    return default

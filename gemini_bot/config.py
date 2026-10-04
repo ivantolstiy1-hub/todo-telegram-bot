@@ -38,6 +38,11 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 
+# Video AI API Keys (Kling AI, Luma Dream Machine, Minimax Hailuo, Runway)
+FAL_KEY = os.getenv("FAL_KEY", "").strip()
+LUMA_API_KEY = os.getenv("LUMA_API_KEY", "").strip()
+RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY", "").strip()
+
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "auto-hermes").strip()
 ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "8173946372,8562721499")
 ADMIN_IDS = set()
@@ -52,7 +57,7 @@ SYSTEM_PROMPT = os.getenv(
     "SYSTEM_PROMPT",
     "Ты — умный, эрудированный и дружелюбный персональный AI-ассистент в Telegram на базе Google Gemini и Агента Гермес. "
     "Твоя задача — оперативно, точно и понятно помогать пользователю в решении любых задач: в коде, учебе, работе, "
-    "анализе текстов и генерации идей. Отвечай на языке собеседника, сохраняй нить диалога и используй красивое форматирование."
+    "анализе текстов, генерации видео и создании идей. Отвечай на языке собеседника, сохраняй нить диалога и используй красивое форматирование."
 ).strip()
 
 DB_PATH = BASE_DIR / "bot_memory.db"
@@ -62,6 +67,7 @@ MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "35000"))
 
 AVAILABLE_MODELS = {
     "auto-hermes": "🤖 Агент Гермес (Умный авто-маршрутизатор)",
+    "video-director": "🎬 Video AI & Монтаж (Luma, Kling, Minimax)",
     "antigravity": "🛠 Antigravity CLI (Терминал, файлы и команды)",
     "gemini-3.5-flash": "⚡ Gemini 3.5 Flash (Google AI)",
     "gemini-3.1-pro-preview": "🧠 Gemini 3.1 Pro (Флагман Google)",

@@ -25,6 +25,9 @@ def get_models_keyboard(current_model: str) -> types.InlineKeyboardMarkup:
         # Индикатор готовности провайдера
         if model_id == "auto-hermes":
             indicator = "✨"
+        elif model_id == "video-director":
+            from services.video_service import video_service
+            indicator = "🟢" if video_service.has_any_active_provider() else "🎬"
         elif model_id == "antigravity":
             indicator = "🟢" if pstats.get("antigravity", {}).get("configured") else "💻"
         elif model_id.startswith("gemini-"):
@@ -77,22 +80,25 @@ def register_common_handlers(bot: TeleBot):
             f"⚙️ *Текущий режим:* `{mode_label}`\n\n"
             "✨ *Что я умею:*\n"
             "• 🏛 *Агент Гермес (Мульти-LLM)* — умный диспетчер нейросетей! Автоматически направляет математику в DeepSeek R1, сложный код в Claude 3.5, творчество в Nous Hermes / ChatGPT, а быстрые ответы — в Gemini 3.5 Flash.\n"
+            "• 🎬 *Video AI & Монтаж* — генерация кинематографичных видео (Luma Dream Machine, Kling AI, Minimax) и режиссерская раскадровка сцен.\n"
             "• 🤖 *Antigravity Agent (CLI)* — работа с проектом, чтение файлов, запуск команд прямо из Telegram.\n"
             "• 🧠 *Единая память диалога* — контекст сохраняется при переключении между любыми нейросетями.\n"
             "• 📸 *Фото и скриншоты* — анализ графиков, диаграмм, кода с экрана.\n"
             "• 🎙 *Голосовые сообщения* — понимаю речь и выполняю голосовые поручения.\n"
             "• 📄 *Документы* — разбираю `.py`, `.txt`, `.pdf` файлы.\n\n"
             "⚡ *Команды управления:*\n"
+            "/video — Генератор видео и режиссерский монтажный стол\n"
             "/mode — Режим работы (Гермес / Antigravity CLI / Gemini Direct)\n"
-            "/model — Выбрать модель (Auto-Hermes, DeepSeek, Claude, ChatGPT, Gemini)\n"
+            "/model — Выбрать модель (Auto-Hermes, Video AI, DeepSeek, Claude, ChatGPT, Gemini)\n"
             "/status — Текущий статус памяти, ключей и провайдеров\n"
             "/reset или /new — Очистить память и начать заново\n"
             "/config — Интерактивная самонастройка стиля и температуры\n"
             "/help — Справка и примеры\n\n"
             "💡 *Быстрые фразы Гермеса:* можно написать прямо в чат:\n"
+            "_«Гермес, сгенерируй видео: кот в скафандре летит к Марсу»_\n"
+            "_«видео 9:16: неоновый спорткар на ночной трассе»_\n"
             "_«Гермес, спроси у DeepSeek: реши задачу...»_\n"
-            "_«через Claude: напиши скрипт...»_\n"
-            "_«Гермес, сочини стих»_\n\n"
+            "_«через Claude: напиши скрипт...»_\n\n"
             "Отправь мне задачу или вопрос прямо сейчас! 👇"
         )
         if is_admin(user_id):
@@ -241,13 +247,75 @@ def register_common_handlers(bot: TeleBot):
             "   • _«через Claude: найди баг в коде...»_\n"
             "   • _«через ChatGPT: придумай слоган...»_\n"
             "   • _«Гермес, ...»_ — автовыбор лучшей модели.\n"
-            "2. 🤖 *Режим Antigravity Agent:* решение задач в терминале, работа с репозиторием и файлами.\n"
-            "3. ⚡ *Режим Gemini Direct:* сверхбыстрый чат через прямой API Google.\n"
-            "4. 🛠 *Автономная самонастройка:* бот меняет температуру, стиль и правила по фразам «Настрой себя так...» или через /config.\n"
-            "5. 🔄 *Авто-каскад и отказоустойчивость:* при отсутствии ключей сторонних LLM Гермес автоматически перенаправляет запрос на Gemini без ошибок для пользователя.\n"
-            "6. 🎙 *Медиа (фото, голос, файлы):* отправляйте голосовые сообщения, фото или код — бот поймет и ответит."
+            "2. 🎬 *Video AI & Монтаж (/video):* генерация видео через ТОП нейросети (Luma Ray 2, Kling AI 1.5, Minimax Hailuo) и создание режиссерских раскадровок с саунд-дизайном.\n"
+            "   • _«/video 9:16 неоновый спорткар в ночном городе»_\n"
+            "   • _«Гермес, смонтируй рилс про фитнес»_\n"
+            "3. 🤖 *Режим Antigravity Agent:* решение задач в терминале, работа с репозиторием и файлами.\n"
+            "4. ⚡ *Режим Gemini Direct:* сверхбыстрый чат через прямой API Google.\n"
+            "5. 🛠 *Автономная самонастройка:* бот меняет температуру, стиль и правила по фразам «Настрой себя так...» или через /config.\n"
+            "6. 🔄 *Авто-каскад и отказоустойчивость:* при отсутствии ключей сторонних LLM Гермес автоматически перенаправляет запрос на Gemini без ошибок для пользователя.\n"
+            "7. 🎙 *Медиа (видео, фото, голос, файлы):* отправляйте голосовые сообщения, фото или код — бот поймет и ответит."
         )
         safe_send_message(bot, message.chat.id, text)
+
+    @bot.message_handler(commands=["video", "kling", "luma"])
+    def cmd_video(message: types.Message):
+        user_id = message.from_user.id
+        parts = message.text.split(maxsplit=1)
+        if len(parts) > 1 and parts[1].strip():
+            # Запрос с описанием видео прямо в команде
+            prompt = parts[1].strip()
+            from handlers.messages import _process_user_prompt
+            _process_user_prompt(bot, message, user_id, f"видео: {prompt}")
+            return
+
+        # Если команда без аргументов, показываем интерактивное меню выбора формата и статуса
+        from services.video_service import video_service
+        v_status = video_service.get_providers_status()
+        luma_icon = "🟢 Готов" if v_status["luma"] else "⚪ (нужен ключ)"
+        fal_icon = "🟢 Готов" if v_status["fal"] else "⚪ (нужен ключ)"
+        runway_icon = "🟢 Готов" if v_status["runway"] else "⚪ (нужен ключ)"
+
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btn_shorts = types.InlineKeyboardButton("📱 9:16 Shorts / Reels", callback_data="vid_ratio:9:16")
+        btn_yt = types.InlineKeyboardButton("🖥 16:9 YouTube / Кино", callback_data="vid_ratio:16:9")
+        btn_model_set = types.InlineKeyboardButton("🎬 Включить режим Video AI", callback_data="setmodel:video-director")
+        markup.add(btn_shorts, btn_yt)
+        markup.add(btn_model_set)
+
+        text = (
+            "🎬 *Video AI Режиссер и Генератор Видео*\n\n"
+            "Я умею создавать кинематографичные видео и профессиональные монтажные планы:\n"
+            "• 🌟 *Kling AI 1.5 & Fal.ai* — реалистичная физика, текучесть и динамика\n"
+            "• 🚀 *Luma Dream Machine (Ray 2)* — плавные движения камеры и 35mm эстетика\n"
+            "• 🎞 *Minimax Hailuo & Runway Gen-3* — кинематографичные персонажи и свет\n"
+            "• 📋 *Director's Cut Storyboard* — раскадровка сцен, хронометраж и саунд-дизайн\n\n"
+            "📊 *Статус ключей прямого рендеринга:*\n"
+            f"• Luma Dream Machine: {luma_icon}\n"
+            f"• Fal.ai (Kling 1.5): {fal_icon}\n"
+            f"• Runway Gen-3: {runway_icon}\n\n"
+            "💡 *Как запустить генерацию:*\n"
+            "1. Отправьте команду с описанием:\n"
+            "`/video 9:16 Неоновый спорткар на ночной дождливой трассе`\n"
+            "2. Или напишите прямо в чат:\n"
+            "_«Гермес, сгенерируй видео: кот в скафандре летит к Марсу»_\n\n"
+            "Выберите формат ролика:"
+        )
+        safe_send_message(bot, message.chat.id, text, reply_markup=markup)
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("vid_ratio:"))
+    def callback_vid_ratio(call: types.CallbackQuery):
+        ratio = call.data.split(":", 1)[1]
+        label = "📱 9:16 (Shorts / Reels / TikTok)" if ratio == "9:16" else "🖥 16:9 (YouTube / Кино)"
+        bot.answer_callback_query(call.id, f"Выбран формат {ratio}")
+        text = (
+            f"🎬 *Выбран формат:* `{label}`\n\n"
+            f"Теперь отправьте в чат команду с описанием сцены, например:\n"
+            f"`/video {ratio} Неоновый кот-детектив под дождем в Токио`\n\n"
+            f"Либо напишите сообщением:\n"
+            f"_«видео {ratio}: закат над океаном, стая дельфинов, кинематографичный свет»_"
+        )
+        safe_send_message(bot, call.message.chat.id, text)
 
     # -------------------------------------------------------------
     # Команда и интерактивное меню /config

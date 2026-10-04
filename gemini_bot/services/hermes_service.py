@@ -376,6 +376,42 @@ class OpenRouterProvider(BaseAIProvider):
         return data["choices"][0]["message"]["content"]
 
 
+class VideoDirectorProvider(BaseAIProvider):
+    """
+    Провайдер генерации и режиссуры видеоконтента.
+    Объединяет прямое создание видео (Luma Ray 2, Kling 1.5, Minimax Hailuo)
+    и профессиональный монтажный стол (Director's Cut Storyboard + Саунд-дизайн).
+    """
+    name = "video"
+    display_name = "Video AI & Монтаж (Luma, Kling, Minimax)"
+
+    def is_configured(self) -> bool:
+        from services.video_service import video_service
+        return video_service.has_any_active_provider()
+
+    def generate(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: str,
+        temperature: float,
+        model_id: str,
+        on_status: Optional[Callable[[str], None]] = None,
+        **kwargs
+    ) -> str:
+        from services.video_service import video_service
+        prompt = messages[-1]["content"] if messages else "Создай видеоролик"
+        aspect_ratio = kwargs.get("aspect_ratio", "16:9")
+        duration = kwargs.get("duration", 5)
+
+        result = video_service.generate_or_direct(
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            duration_sec=duration,
+            on_status=on_status
+        )
+        return result["text"]
+
+
 # =====================================================================
 # 2. ОРКЕСТРАТОР АГЕНТ ГЕРМЕС (HERMES ORCHESTRATOR)
 # =====================================================================
@@ -385,6 +421,7 @@ class HermesOrchestrator:
     Интеллектуальный мульти-агентный диспетчер (Агент Гермес).
     - Определяет намерения пользователя и тип запроса.
     - Автоматически направляет запрос в специализированную нейросеть:
+      * Генерация и режиссура видео -> Video AI Director (Luma, Kling, Minimax)
       * Рассуждения и математика -> DeepSeek R1
       * Программирование и архитектура -> Claude 3.5 Sonnet
       * Творчество и текст -> ChatGPT / Nous Hermes 3
@@ -395,6 +432,7 @@ class HermesOrchestrator:
 
     def __init__(self):
         self.providers: Dict[str, BaseAIProvider] = {
+            "video": VideoDirectorProvider(),
             "antigravity": AntigravityProvider(),
             "gemini": GeminiProvider(),
             "deepseek": DeepSeekProvider(),
@@ -421,18 +459,28 @@ class HermesOrchestrator:
           "через claude: напиши скрипт..."
           "Гермес, через antigravity: запусти команду git status"
         """
-        # Паттерн 1: "Гермес, [через/спроси у/реши через/выполни в] <модель>[:|, ] <текст>"
+        # Паттерн 1: "Гермес, [через/спроси у/реши через/передай/используй/запусти/выполни/сгенерируй/смонтируй/сделай] <модель>[:|, ] <текст>"
         pattern1 = re.compile(
-            r"^(?:гермес|hermes)[,\s]+(?:через|спроси\s+у|реши\s+через|передай|используй|запусти\s+в|выполни\s+в)?\s*"
-            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини|antigravity|антигравити|терминале|терминал|agy)[,\s:]*(.*)$",
+            r"^(?:гермес|hermes)[,\s]+(?:через|спроси\s+у|реши\s+через|передай|используй|запусти(?:\s+в)?|выполни(?:\s+в)?|сгенерируй(?:\s+в|\s+мне)?|смонтируй(?:\s+в|\s+мне|\s+через)?|сделай(?:\s+мне)?|нарисуй)?\s*"
+            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини|antigravity|антигравити|терминале|терминал|agy|luma|лума|kling|клинг|runway|ранвей|minimax|минимакс|hailuo|видео|video)[,\s:]*(.*)$",
             re.IGNORECASE | re.DOTALL,
         )
         # Паттерн 2: "через <модель>[:|, ] <текст>" или "спроси у <модель>[:|, ] <текст>"
         pattern2 = re.compile(
-            r"^(?:через|спроси\s+у|выполни\s+в|запусти\s+в)\s+"
-            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини|antigravity|антигравити|терминале|терминал|agy)[,\s:]*(.*)$",
+            r"^(?:через|спроси\s+у|выполни\s+в|запусти\s+в|сгенерируй(?:\s+в|\s+мне)?|смонтируй(?:\s+в|\s+через)?|сделай(?:\s+мне)?)\s+"
+            r"(deepseek|дипсик|claude|клод|chatgpt|openai|чатгпт|hermes|гермес|gemini|джемини|antigravity|антигравити|терминале|терминал|agy|luma|лума|kling|клинг|runway|ранвей|minimax|минимакс|hailuo|видео|video)[,\s:]*(.*)$",
             re.IGNORECASE | re.DOTALL,
         )
+        # Паттерн 3: прямое обращение "видео[:\s] <текст>" или "видео 9:16[:\s] <текст>" или "video[:\s] <текст>"
+        pattern3 = re.compile(
+            r"^(?:видео|video)(?:\s+(?:9:16|16:9))?[,\s:]+(.*)$",
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        match3 = pattern3.match(text)
+        if match3:
+            rem = match3.group(1).strip()
+            return "video-director", rem if rem else text
 
         match = pattern1.match(text) or pattern2.match(text)
         if match:
@@ -444,6 +492,8 @@ class HermesOrchestrator:
 
             if target_raw in ("antigravity", "антигравити", "терминал", "терминале", "agy"):
                 return "antigravity", prompt_to_use
+            elif target_raw in ("luma", "лума", "kling", "клинг", "runway", "ранвей", "minimax", "минимакс", "hailuo", "видео", "video"):
+                return "video-director", prompt_to_use
             elif target_raw in ("deepseek", "дипсик"):
                 return "deepseek-reasoner", prompt_to_use
             elif target_raw in ("claude", "клод"):
@@ -463,6 +513,16 @@ class HermesOrchestrator:
         Возвращает кортеж: (рекомендуемая_модель, причина_маршрутизации).
         """
         t = text.lower()
+
+        # -1. Генерация и монтаж видео, рилсы, анимация, раскадровка -> Video AI Director
+        video_patterns = [
+            r"видео", r"ролик", r"клип", r"рилс", r"reels", r"shorts", r"тизер",
+            r"трейлер", r"смонтируй", r"монтаж", r"анимаци", r"раскадровк",
+            r"storyboard", r"сценарий видео", r"kling", r"luma", r"runway",
+            r"hailuo", r"minimax", r"сгенерируй.*видео", r"создай.*видео"
+        ]
+        if any(re.search(p, t) for p in video_patterns):
+            return "video-director", "🎬 Анализ: генерация видео и режиссура монтажа -> маршрут в Video AI Director"
 
         # 0. Терминальные команды, запуск скриптов, работа с файловой системой -> Antigravity CLI
         terminal_patterns = [
@@ -516,6 +576,10 @@ class HermesOrchestrator:
         
         Возвращает: (provider_instance, actual_model_id, notification_banner)
         """
+        # -1. Запрос к Video AI & Монтаж (Luma, Kling, Minimax, Video Director)
+        if target_model in ("video-director", "video", "luma", "kling", "runway", "minimax", "hailuo"):
+            return self.providers["video"], "video-director", None
+
         # 0. Запрос к Antigravity CLI
         if target_model in ("antigravity", "agent"):
             if self.providers["antigravity"].is_configured():

@@ -167,6 +167,22 @@ def _process_user_prompt(bot: TeleBot, message: types.Message, user_id: int, use
                 bot.delete_message(message.chat.id, dynamic_status_msg_id)
             except Exception:
                 pass
+
+        # Проверка наличия сгенерированного видео для прямой отправки файлом
+        from services.video_service import video_service
+        video_url = video_service.extract_video_url(reply)
+        if video_url:
+            try:
+                bot.send_chat_action(message.chat.id, "upload_video")
+                bot.send_video(
+                    message.chat.id,
+                    video_url,
+                    caption=f"🎬 Сгенерированное AI-видео\n«{user_text[:100]}»",
+                    reply_to_message_id=message.message_id
+                )
+            except Exception as vid_err:
+                logger.warning(f"Не удалось отправить видео напрямую: {vid_err}")
+
         safe_send_message(bot, message.chat.id, reply, reply_to_message_id=message.message_id)
     except Exception as e:
         logger.exception("Ошибка при обработке сообщения:")

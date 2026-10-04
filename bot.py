@@ -10,7 +10,7 @@ import telebot
 from telebot import types
 
 # ⚠️ Вставь сюда свой рабочий токен от @BotFather:
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM")
+BOT_TOKEN = os.getenv("8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM", "8790966826:AAF8Mc6FWl5uZVsfZCo8uhqT0ejVsv_d_WM")
 WEBAPP_URL = "https://todo-telegram-bot-tt80.onrender.com"
 
 BASE_DIR = Path(__file__).resolve().parent
